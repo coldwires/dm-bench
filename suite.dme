@@ -1,0 +1,60 @@
+// Canonical BYOND test suite.
+//
+// Build:  DreamMaker suite.dme
+// Run:    DreamDaemon suite.dmb <port> -trusted -invisible
+// Output: results-<version>.<build>-<system>.tsv in this directory, named by the
+//         engine itself so a result cannot be filed under the wrong build. The
+//         world shuts itself down when done.
+//
+// This is the manifest. Code lives in src/*.dm.
+//
+// NOTE: del() measurements are NOT here. They contaminate the process by
+// raising a permanent residual tied to peak concurrent object count, which
+// then corrupts every later measurement. They live in suite_del.dme and must
+// run in their own process.
+
+#include "src\framework.dm"
+#include "src\assert_lifetime.dm"
+#include "src\assert_numeric.dm"
+#include "src\assert_scheduler.dm"
+#include "src\perf_view.dm"
+#include "src\perf_core.dm"
+#include "src\perf_io.dm"
+#include "src\perf_calls_deep.dm"
+
+world
+	fps = 20
+	maxx = 100
+	maxy = 100
+	maxz = 1
+	turf = /turf
+	loop_checks = 0
+	name = "byond-canonical-suite"
+
+	New()
+		..()
+		spawn(1)
+			Header()
+			CalibrateClock()
+			CalibrateBaseline()
+
+			var/st
+			st = world.timeofday; Suite_Lifetime();  Section("lifetime",  world.timeofday - st)
+			st = world.timeofday; Suite_Numeric();   Section("numeric",   world.timeofday - st)
+			st = world.timeofday; Suite_Scheduler(); Section("scheduler", world.timeofday - st)
+			st = world.timeofday; Suite_View();      Section("view",      world.timeofday - st)
+			st = world.timeofday; Suite_Lists();     Section("lists",     world.timeofday - st)
+			st = world.timeofday; Suite_Dispatch();  Section("dispatch",  world.timeofday - st)
+			st = world.timeofday; Suite_Calls();     Section("calls",     world.timeofday - st)
+			st = world.timeofday; Suite_Strings();   Section("strings",   world.timeofday - st)
+			st = world.timeofday; Suite_Alloc();     Section("alloc",     world.timeofday - st)
+			st = world.timeofday; Suite_Movement();  Section("movement",  world.timeofday - st)
+			st = world.timeofday; Suite_IO();        Section("io",        world.timeofday - st)
+			st = world.timeofday; Suite_CallsDeep(); Section("calls_deep",world.timeofday - st)
+			st = world.timeofday; Suite_Profiler();  Section("profiler",  world.timeofday - st)
+			st = world.timeofday; Suite_CrossCheck();Section("xcheck",    world.timeofday - st)
+
+			Summary()
+			world.log << "suite complete: [PASSED] passed, [FAILED] failed, [MEASURED] measured"
+			sleep(5)
+			del(src)

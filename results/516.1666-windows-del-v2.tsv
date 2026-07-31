@@ -1,0 +1,41 @@
+# suite	byond-canonical-del
+# byond_version	516
+# byond_build	1666
+# result_file	results-516.1666-windows-del.tsv
+# system	windows
+# tick_lag	0.5
+# min_ds	15
+# min_pct	20
+kind	id	category	name	value	unit	expected	status	res	notes
+# clock	tick_usage
+# us_per_pct_measured	507.16
+# us_per_pct_predicted	500
+# clock_calibration_ds	51
+# clock_calibration_pct	10056
+MEASURE	framework.empty_loop	framework	empty loop iteration	0.07	us			35	baseline, subtracted from sub-microsecond rows
+# baseline_us	0.07
+ASSERT	del.zero_refs_is_free	del	del() is free when only a local points at the victim	1		1	PASS		0.05 us
+ASSERT	del.one_ref_costs	del	a single heap reference makes del() cost real time	1		1	PASS		9.38 us
+ASSERT	del.refcount_does_not_scale	del	256 references cost no more than 1	1		1	PASS		1 ref 9.38 us, 256 refs 13.73 us
+MEASURE	del.refs_0	del	del cost, 0 heap refs	0.05	us			5.44	LOW_RESOLUTION; arms 93.54/88.1 pct
+MEASURE	del.refs_1	del	del cost, 1 heap ref	9.38	us			1110.27	arms 1222.06/111.79 pct
+MEASURE	del.refs_256	del	del cost, 256 heap refs	13.7	us			541.46	arms 1995.2/1453.74 pct
+MEASURE	del.turfs_10k	del	del cost at 10k turfs	11.6	us			916.49	arms 999.06/82.57 pct
+MEASURE	del.turfs_48k	del	del cost at 48k turfs	9.67	us			762.34	arms 851.24/88.89 pct
+ASSERT	del.turfs_not_counted	del	map size does not affect del() cost	1		1	PASS		11.62 us at 10k turfs, 9.67 us at 48k turfs
+MEASURE	del.before_churn	del	del cost before 500k churn	9.86	us			778.05	arms 860.3/82.25 pct
+MEASURE	del.after_churn	del	del cost after 500k churn	11.5	us			904.66	arms 999.17/94.51 pct
+ASSERT	del.cumulative_alloc_irrelevant	del	allocating and freeing 500k objects does not change del() cost	1		1	PASS		9.86 us before, 11.47 us after
+MEASURE	del.live_0	del	del cost at 0 live objs	9.6	us			757.35	arms 835.69/78.34 pct
+MEASURE	del.live_50000	del	del cost at 50000 live objs	81	us			957.87	arms 968.78/10.91 pct
+MEASURE	del.live_100000	del	del cost at 100000 live objs	168.9	us			1998.71	arms 2012.24/13.53 pct
+MEASURE	del.live_200000	del	del cost at 200000 live objs	2398.5	us			7093.92	arms 7096.75/2.83 pct
+ASSERT	del.live_count_drives_cost	del	del() cost rises sharply with live object count	1		1	PASS		9.6 us cold vs 2398.51 us at 200k live
+ASSERT	del.peak_leaves_residual	del	freeing the population does not restore the cold cost	1		1	PASS		9.6 us cold, 151.49 us after 200k existed and were freed
+MEASURE	del.residual_after_peak	del	del cost after peak population freed	151.5	us			5973.95	arms 6013.29/39.34 pct
+
+# passed	7
+# failed	0
+# measured	13
+# low_resolution	1
+# result	PASS

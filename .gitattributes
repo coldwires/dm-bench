@@ -1,0 +1,15 @@
+# Normalize to LF in the repository, check out native. DM sources are
+# tab-indented and the compiler is indentation-sensitive, so mixed line endings
+# across platforms are worth ruling out.
+* text=auto eol=lf
+
+*.dm    text eol=lf
+*.dme   text eol=lf
+*.md    text eol=lf
+*.tsv   text eol=lf
+*.ps1   text eol=crlf
+
+*.dmi   binary
+*.dmb   binary
+*.rsc   binary
+*.png   binary

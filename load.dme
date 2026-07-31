@@ -1,0 +1,231 @@
+#define TAG_WEAPON   (1<<0)
+#define TAG_EDIBLE   (1<<1)
+#define TAG_WEARABLE (1<<2)
+
+var/global/logf
+var/global/list/players = list()
+var/global/list/clutter = list()
+
+proc/L(msg)
+	if(!logf) logf = file("C:/Users/ANONYM~1/AppData/Local/Temp/claude/C--Users-Anonymous-Desktop-byond-dwo/507e9d5b-11ba-4615-963c-fda31c59d3ba/scratchpad/reftest/load.txt")
+	logf << msg
+
+proc/us(dt, reps)
+	return "[round(dt * 100000 / reps, 0.01)] us/call"
+
+turf/floor
+mob/player
+	var/tmp/moved = 0
+obj/clutter
+
+// --- type-test candidates ---
+obj/item
+	var
+		flags = 0
+		list/isa
+	weapon
+
+cap
+	parent_type = /atom/movable
+	weapon
+
+// ---------------- view() microbenchmarks ----------------
+
+proc
+	bench_view(reps, r, atom/c)
+		var/t0 = world.timeofday
+		for(var/i = 1 to reps)
+			var/list/V = view(r, c)
+			if(!V.len) break
+		return world.timeofday - t0
+
+	bench_oview(reps, r, atom/c)
+		var/t0 = world.timeofday
+		for(var/i = 1 to reps)
+			var/list/V = oview(r, c)
+			if(!V.len) break
+		return world.timeofday - t0
+
+	bench_range(reps, r, atom/c)
+		var/t0 = world.timeofday
+		for(var/i = 1 to reps)
+			var/list/V = range(r, c)
+			if(!V.len) break
+		return world.timeofday - t0
+
+	bench_block(reps, r, atom/c)
+		var/t0 = world.timeofday
+		for(var/i = 1 to reps)
+			var/list/V = block(locate(c.x-r, c.y-r, c.z), locate(c.x+r, c.y+r, c.z))
+			if(!V.len) break
+		return world.timeofday - t0
+
+	bench_manual(reps, r, atom/c)
+		var/t0 = world.timeofday
+		for(var/i = 1 to reps)
+			var/n = 0
+			for(var/xx = c.x-r to c.x+r)
+				for(var/yy = c.y-r to c.y+r)
+					var/turf/T = locate(xx, yy, c.z)
+					if(T) n++
+			if(!n) break
+		return world.timeofday - t0
+
+	// view() then actually touch every mob found (the realistic shape)
+	bench_view_iter(reps, r, atom/c)
+		var/t0 = world.timeofday
+		for(var/i = 1 to reps)
+			var/n = 0
+			for(var/mob/player/P in view(r, c))
+				n++
+		return world.timeofday - t0
+
+// ---------------- type-test microbenchmarks ----------------
+
+proc
+	bench_istype(reps, obj/item/I)
+		var/t0 = world.timeofday
+		for(var/i = 1 to reps)
+			if(istype(I, /obj/item/weapon)) continue
+		return world.timeofday - t0
+
+	bench_flags(reps, obj/item/I)
+		var/t0 = world.timeofday
+		for(var/i = 1 to reps)
+			if(I.flags & TAG_WEAPON) continue
+		return world.timeofday - t0
+
+	bench_isa(reps, obj/item/I)
+		var/t0 = world.timeofday
+		for(var/i = 1 to reps)
+			if(I.isa["weapon"]) continue
+		return world.timeofday - t0
+
+	bench_cap(reps, obj/item/I)
+		var/t0 = world.timeofday
+		for(var/i = 1 to reps)
+			if(locate(/cap/weapon) in I) continue
+		return world.timeofday - t0
+
+// ---------------- 200-player tick simulation ----------------
+
+proc
+	place(n, cx, cy, spread)
+		for(var/p in players) del(p)
+		players.Cut()
+		for(var/i = 1 to n)
+			var/mob/player/p = new
+			p.loc = locate(cx + rand(-spread, spread), cy + rand(-spread, spread), 1)
+			players += p
+
+	sim(label, mode, ticks, movers)
+		var/total = 0
+		var/peak = 0
+		for(var/t = 1 to ticks)
+			sleep(world.tick_lag)
+			switch(mode)
+				if("idle")
+					// nothing
+				if("poll")
+					for(var/mob/player/P in players)
+						for(var/mob/player/O in view(7, P))
+							P.moved++
+				if("dirty")
+					for(var/i = 1 to movers)
+						var/mob/player/P = players[i]
+						for(var/mob/player/O in view(7, P))
+							P.moved++
+				if("push")
+					for(var/i = 1 to movers)
+						var/mob/player/P = players[i]
+						var/turf/T = P.loc
+						for(var/mob/player/O in view(7, T))
+							O.moved++
+			var/u = world.tick_usage
+			total += u
+			if(u > peak) peak = u
+		L("  [label]: avg [round(total/ticks, 0.1)]%  peak [round(peak, 0.1)]%")
+
+world
+	fps = 20
+	maxx = 200
+	maxy = 200
+	maxz = 1
+	turf = /turf/floor
+	loop_checks = 0
+
+	New()
+		..()
+		spawn(2)
+			L("world.tick_lag = [world.tick_lag]  (fps [world.fps]) -> [world.tick_lag * 100] ms budget/tick")
+			L("map: [world.maxx]x[world.maxy] = [world.maxx*world.maxy] turfs")
+			L("")
+
+			// ---- view() cost, empty map ----
+			var/mob/player/probe = new
+			probe.loc = locate(100, 100, 1)
+
+			L("=== view() cost, EMPTY map, 20000 reps ===")
+			L("  view(7)    : [us(bench_view(20000, 7, probe), 20000)]")
+			L("  oview(7)   : [us(bench_oview(20000, 7, probe), 20000)]")
+			L("  range(7)   : [us(bench_range(20000, 7, probe), 20000)]")
+			L("  block(15x15): [us(bench_block(20000, 7, probe), 20000)]")
+			L("  manual loop: [us(bench_manual(20000, 7, probe), 20000)]")
+			L("  view(1)    : [us(bench_view(20000, 1, probe), 20000)]")
+			L("  view(4)    : [us(bench_view(20000, 4, probe), 20000)]")
+			L("  view(10)   : [us(bench_view(20000, 10, probe), 20000)]")
+			L("")
+
+			// ---- view() cost with clutter on turfs ----
+			for(var/i = 1 to 2000)
+				var/obj/clutter/c = new
+				c.loc = locate(rand(90,110), rand(90,110), 1)
+				clutter += c
+			L("=== view(7) with 2000 objs packed in a 21x21 zone ===")
+			L("  view(7)      : [us(bench_view(20000, 7, probe), 20000)]")
+			L("  view(7)+iter : [us(bench_view_iter(5000, 7, probe), 5000)]")
+			for(var/c in clutter) del(c)
+			clutter.Cut()
+			L("")
+
+			// ---- view() cost with 200 mobs clustered ----
+			place(200, 100, 100, 5)
+			L("=== view(7) with 200 mobs in an 11x11 cluster ===")
+			L("  view(7)      : [us(bench_view(20000, 7, probe), 20000)]")
+			L("  view(7)+iter : [us(bench_view_iter(5000, 7, probe), 5000)]")
+			L("")
+
+			// ---- type tests ----
+			var/obj/item/weapon/W = new
+			W.flags = TAG_WEAPON
+			W.isa = list("weapon" = 1, "metal" = 1)
+			var/cap/weapon/cw = new
+			cw.loc = W
+			L("=== type test, 2000000 reps ===")
+			L("  istype()          : [us(bench_istype(2000000, W), 2000000)]")
+			L("  bitfield &        : [us(bench_flags(2000000, W), 2000000)]")
+			L("  isa assoc lookup  : [us(bench_isa(2000000, W), 2000000)]")
+			L("  locate(cap) in I  : [us(bench_cap(2000000, W), 2000000)]")
+			cw.loc = null
+			L("")
+
+			// ---- tick load simulation ----
+			L("=== TICK LOAD @ tick_lag 0.5, 200 players, 100 ticks ===")
+			L("  -- SPREAD over the whole 200x200 map --")
+			place(200, 100, 100, 95)
+			sim("idle baseline      ", "idle",  100, 0)
+			sim("poll: all 200 view ", "poll",  100, 0)
+			sim("dirty: 20 movers   ", "dirty", 100, 20)
+			sim("push: 20 events    ", "push",  100, 20)
+
+			L("  -- CLUSTERED, all 200 within an 11x11 --")
+			place(200, 100, 100, 5)
+			sim("idle baseline      ", "idle",  100, 0)
+			sim("poll: all 200 view ", "poll",  100, 0)
+			sim("dirty: 20 movers   ", "dirty", 100, 20)
+			sim("push: 20 events    ", "push",  100, 20)
+
+			L("")
+			L("DONE")
+			sleep(5)
+			del(src)

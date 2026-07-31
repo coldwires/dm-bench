@@ -1,0 +1,151 @@
+// Maptick and bandwidth probe.
+//
+// Server: Linux DreamDaemon. Clients: separate machine, so client rendering
+// cannot steal server CPU.
+//
+// A static scene costs almost nothing to maintain, so the world generates
+// realistic churn: NPCs moving every tick inside the viewed area, and client
+// mobs moving too. That is what a busy room actually looks like.
+//
+// Mode is polled from /opt/byondtest/mode.txt:
+//   dense_static  : clients in the busy zone, nothing moves
+//   dense_moving  : clients in the busy zone, 300 NPCs + clients moving
+//   empty_moving  : clients parked on bare turf far away, NPCs still moving
+//                   (control: isolates per-connection cost from map-send cost)
+
+var/global/logf
+var/global/mode = "boot"
+var/global/list/conns = list()
+var/global/list/npcs = list()
+var/global/moving = 0
+
+#define ZX 60
+#define ZY 60
+#define ZR 10
+
+proc/L(msg)
+	if(!logf) logf = file("/opt/byondtest/probe.log")
+	logf << msg
+
+turf/floor
+	icon = 'probe.dmi'
+	icon_state = "f"
+
+obj/scenery
+	icon = 'probe.dmi'
+	icon_state = "f"
+
+mob/player
+	icon = 'probe.dmi'
+	icon_state = "f"
+
+mob/npc
+	icon = 'probe.dmi'
+	icon_state = "f"
+
+world
+	fps = 20
+	maxx = 120
+	maxy = 120
+	maxz = 1
+	turf = /turf/floor
+	mob = /mob/player
+	name = "probe"
+
+	New()
+		..()
+		for(var/i = 1 to 1500)
+			var/obj/scenery/o = new
+			o.loc = locate(ZX + rand(-ZR,ZR), ZY + rand(-ZR,ZR), 1)
+			o.color = rgb(rand(0,255), rand(0,255), rand(0,255))
+		for(var/i = 1 to 300)
+			var/mob/npc/N = new
+			N.loc = locate(ZX + rand(-ZR,ZR), ZY + rand(-ZR,ZR), 1)
+			N.color = rgb(rand(0,255), rand(0,255), rand(0,255))
+			npcs += N
+		L("boot: [world.maxx]x[world.maxy] turfs, 1500 objs + [npcs.len] npcs in a [ZR*2+1]x[ZR*2+1] zone")
+		L("instruments: cpu=[("cpu" in world.vars)?"y":"n"] map_cpu=[("map_cpu" in world.vars)?"y":"n"]")
+		L("")
+		L("mode|clients|tickusage_avg|tickusage_peak|cpu|moving")
+		spawn(1) modewatch()
+		spawn(1) mover()
+		spawn(1) monitor()
+
+client
+	// Deliberately does NOT call ..(). The default action is documented as
+	// "look for an existing mob with the same key as the player. If found,
+	// connect the player to that mob", which is what evicts the previous
+	// connection when several clients present the same key.
+	New()
+		conns += src
+		var/mob/player/M = new
+		place(M)
+		src.mob = M
+		L("# connect -> [conns.len]  key=[key]  ckey=[ckey]  addr=[address]")
+		return M
+
+	Del()
+		conns -= src
+		L("# leave -> [conns.len]  key=[key]")
+		..()
+
+proc
+	place(mob/M)
+		if(!M) return
+		if(findtext(mode, "dense"))
+			M.loc = locate(ZX + rand(-4,4), ZY + rand(-4,4), 1)
+		else
+			M.loc = locate(112, 112, 1)
+
+	replace_all()
+		for(var/client/C in conns)
+			place(C.mob)
+
+	inzone(atom/A)
+		return A && A.x >= ZX-ZR && A.x <= ZX+ZR && A.y >= ZY-ZR && A.y <= ZY+ZR
+
+	wander(mob/M)
+		if(!M) return
+		step(M, pick(NORTH, SOUTH, EAST, WEST))
+		if(!inzone(M))
+			// uniform over the WHOLE zone. sending strays back to the centre
+			// concentrates the population over time and inflates density.
+			M.loc = locate(ZX + rand(-ZR,ZR), ZY + rand(-ZR,ZR), 1)
+
+	mover()
+		while(1)
+			sleep(world.tick_lag)
+			if(!moving) continue
+			for(var/mob/npc/N in npcs)
+				wander(N)
+			for(var/client/C in conns)
+				if(findtext(mode, "dense"))
+					wander(C.mob)
+
+	modewatch()
+		while(1)
+			sleep(10)
+			var/t = trim(file2text("/opt/byondtest/mode.txt"))
+			if(t && t != mode)
+				mode = t
+				moving = findtext(mode, "moving") ? 1 : 0
+				replace_all()
+				L("# mode -> [mode] (moving=[moving])")
+
+	trim(s)
+		if(!s) return ""
+		return replacetext(replacetext(s, "\n", ""), ascii2text(13), "")
+
+	monitor()
+		var/window = 100
+		while(1)
+			var/total = 0
+			var/peak = 0
+			var/cpu_t = 0
+			for(var/i = 1 to window)
+				sleep(world.tick_lag)
+				var/u = world.tick_usage
+				total += u
+				if(u > peak) peak = u
+				cpu_t += world.cpu
+			L("[mode]|[conns.len]|[round(total/window,0.1)]|[round(peak,0.1)]|[round(cpu_t/window,0.1)]|[moving]")

@@ -1,0 +1,253 @@
+var/global/logf
+var/global/made = 0
+var/global/gone = 0
+
+proc/L(msg)
+	if(!logf) logf = file("C:/Users/ANONYM~1/AppData/Local/Temp/claude/C--Users-Anonymous-Desktop-byond-dwo/507e9d5b-11ba-4615-963c-fda31c59d3ba/scratchpad/reftest/respawn.txt")
+	logf << msg
+
+// ---------- the two competing shapes ----------
+
+effect
+	parent_type = /atom/movable
+
+	target
+		var
+			damage = 0
+		New()
+			..()
+			made++
+		Del()
+			gone++
+			..()
+		proc
+			Owner() as mob
+				return astype(loc, /mob)
+			Damage(amt)
+				var/mob/loaded/o = astype(loc, /mob/loaded)
+				if(!o) return 0
+				damage += amt
+				return 1
+
+// a deliberately realistic player mob: ~30 scalars + 3 lists
+mob/loaded
+	var
+		max_health = 100
+		stamina = 100
+		stamina_max = 100
+		hunger = 0
+		thirst = 0
+		fatigue = 0
+		str = 10
+		dex = 10
+		con = 10
+		intel = 10
+		wis = 10
+		cha = 10
+		xp = 0
+		level = 1
+		gold = 0
+		reputation = 0
+		faction = "none"
+		title = ""
+		bio = ""
+		last_login = 0
+		playtime = 0
+		deaths = 0
+		kills = 0
+		move_delay = 2
+		attack_delay = 4
+		vision_range = 7
+		body_type = 1
+		hair_style = 1
+		eye_color = "#000"
+		skin_color = "#fff"
+		dead = 0
+		damage = 0
+
+		list/inventory
+		list/skills
+		list/recipes
+
+		tmp/effect/target/target
+
+	New()
+		..()
+		made++
+		inventory = new
+		skills = new
+		recipes = new
+
+	Del()
+		gone++
+		..()
+
+	proc
+		TakeDamage(amt)
+			if(dead) return 0
+			damage += amt
+			return 1
+
+// ---------- respawn strategies ----------
+
+proc
+	// Hors: swap the handle, mob untouched
+	respawn_handle(mob/loaded/m)
+		m.target?.loc = null
+		var/effect/target/t = new
+		t.loc = m
+		m.target = t
+
+	// alexkar: brand new mob, copy the state forward, old one to nullspace
+	respawn_newmob(mob/loaded/old)
+		var/mob/loaded/fresh = new
+		fresh.max_health = old.max_health
+		fresh.stamina_max = old.stamina_max
+		fresh.str = old.str
+		fresh.dex = old.dex
+		fresh.con = old.con
+		fresh.intel = old.intel
+		fresh.wis = old.wis
+		fresh.cha = old.cha
+		fresh.xp = old.xp
+		fresh.level = old.level
+		fresh.gold = old.gold
+		fresh.reputation = old.reputation
+		fresh.faction = old.faction
+		fresh.title = old.title
+		fresh.bio = old.bio
+		fresh.last_login = old.last_login
+		fresh.playtime = old.playtime
+		fresh.deaths = old.deaths + 1
+		fresh.kills = old.kills
+		fresh.move_delay = old.move_delay
+		fresh.attack_delay = old.attack_delay
+		fresh.vision_range = old.vision_range
+		fresh.body_type = old.body_type
+		fresh.hair_style = old.hair_style
+		fresh.eye_color = old.eye_color
+		fresh.skin_color = old.skin_color
+		fresh.inventory = old.inventory.Copy()
+		fresh.skills = old.skills.Copy()
+		fresh.recipes = old.recipes.Copy()
+		old.loc = null
+		return fresh
+
+// ---------- benches ----------
+
+proc
+	alloc(T, n)
+		var/t0 = world.timeofday
+		for(var/i = 1 to n)
+			var/x = new T
+			x = null
+		return world.timeofday - t0
+
+	bench_respawn_handle(n)
+		var/mob/loaded/m = new
+		respawn_handle(m)
+		var/t0 = world.timeofday
+		for(var/i = 1 to n)
+			respawn_handle(m)
+		var/dt = world.timeofday - t0
+		m.target?.loc = null
+		del(m)
+		return dt
+
+	bench_respawn_newmob(n)
+		var/mob/loaded/m = new
+		for(var/i = 1 to 20) m.inventory += "item[i]"
+		for(var/i = 1 to 10) m.skills += "skill[i]"
+		for(var/i = 1 to 30) m.recipes += "recipe[i]"
+		var/t0 = world.timeofday
+		for(var/i = 1 to n)
+			m = respawn_newmob(m)
+		var/dt = world.timeofday - t0
+		del(m)
+		return dt
+
+	bench_call_flag(n)
+		var/mob/loaded/m = new
+		var/t0 = world.timeofday
+		for(var/i = 1 to n)
+			m.TakeDamage(1)
+		var/dt = world.timeofday - t0
+		del(m)
+		return dt
+
+	bench_call_handle(n)
+		var/mob/loaded/m = new
+		var/effect/target/t = new
+		t.loc = m
+		var/t0 = world.timeofday
+		for(var/i = 1 to n)
+			t.Damage(1)
+		var/dt = world.timeofday - t0
+		t.loc = null
+		del(m)
+		return dt
+
+	bench_call_handle_dead(n)
+		var/effect/target/t = new   // revoked: loc is null
+		var/t0 = world.timeofday
+		for(var/i = 1 to n)
+			t.Damage(1)
+		return world.timeofday - t0
+
+	// does nullspacing a mob that still has contents actually collect it?
+	leak_probe()
+		made = 0; gone = 0
+		for(var/i = 1 to 1000)
+			var/mob/loaded/m = new
+			var/effect/target/t = new
+			t.loc = m
+			m.target = t
+			m.loc = null       // "send it to nullspace"
+			m = null
+			t = null
+		L("  nullspace w/ contents : made=[made] gone=[gone] LEAKED=[made-gone]")
+
+		made = 0; gone = 0
+		for(var/i = 1 to 1000)
+			var/mob/loaded/m = new
+			var/effect/target/t = new
+			t.loc = m
+			m.target = t
+			t.loc = null       // clear contents first (Lummox)
+			m.loc = null
+			m = null
+			t = null
+		L("  contents cleared first: made=[made] gone=[gone] LEAKED=[made-gone]")
+
+world
+	fps = 10
+	loop_checks = 0
+
+	New()
+		..()
+		spawn(1)
+			L("=== allocation cost, 500k each (deciseconds) ===")
+			L("  /datum              : [alloc(/datum, 500000)]")
+			L("  /effect/target      : [alloc(/effect/target, 500000)]")
+			L("  /obj                : [alloc(/obj, 500000)]")
+			L("  /mob (blank)        : [alloc(/mob, 500000)]")
+			L("  /mob/loaded (30 var + 3 lists) : [alloc(/mob/loaded, 500000)]")
+
+			L("")
+			L("=== respawn cycle, 200k iterations ===")
+			L("  swap handle         : [bench_respawn_handle(200000)]")
+			L("  new mob + copy state: [bench_respawn_newmob(200000)]")
+
+			L("")
+			L("=== damage call, 2M iterations ===")
+			L("  mob.TakeDamage (flag check)   : [bench_call_flag(2000000)]")
+			L("  target.Damage (live owner)    : [bench_call_handle(2000000)]")
+			L("  target.Damage (revoked, noop) : [bench_call_handle_dead(2000000)]")
+
+			L("")
+			L("=== leak probe, 1000 respawns each ===")
+			leak_probe()
+
+			L("DONE")
+			sleep(5)
+			del(src)
