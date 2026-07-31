@@ -1,0 +1,538 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>dm-bench, BYOND engine benchmarks</title>
+<style>
+  /* ---------- tokens ---------- */
+  :root {
+    --bg: #fcfcfd;
+    --ink: #1c2127;
+    --muted: #616a73;
+    --faint: #8b949e;
+    --hair: #dde1e6;
+    --soft: #f3f5f7;
+    --accent: #3565b0;
+    --pass: #1a7f37;
+    --warn: #9a6700;
+    --fail: #b42318;
+    --fail-bg: #fbeeec;
+    --warn-bg: #faf3e1;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #15181c;
+      --ink: #e4e8ec;
+      --muted: #99a3ad;
+      --faint: #6e7982;
+      --hair: #2b3138;
+      --soft: #1c2127;
+      --accent: #7aa5e0;
+      --pass: #57ab5a;
+      --warn: #c99728;
+      --fail: #f47067;
+      --fail-bg: #35201e;
+      --warn-bg: #2e2717;
+    }
+  }
+  :root[data-theme="light"] {
+    --bg: #fcfcfd;
+    --ink: #1c2127;
+    --muted: #616a73;
+    --faint: #8b949e;
+    --hair: #dde1e6;
+    --soft: #f3f5f7;
+    --accent: #3565b0;
+    --pass: #1a7f37;
+    --warn: #9a6700;
+    --fail: #b42318;
+    --fail-bg: #fbeeec;
+    --warn-bg: #faf3e1;
+  }
+  :root[data-theme="dark"] {
+    --bg: #15181c;
+    --ink: #e4e8ec;
+    --muted: #99a3ad;
+    --faint: #6e7982;
+    --hair: #2b3138;
+    --soft: #1c2127;
+    --accent: #7aa5e0;
+    --pass: #57ab5a;
+    --warn: #c99728;
+    --fail: #f47067;
+    --fail-bg: #35201e;
+    --warn-bg: #2e2717;
+  }
+
+  /* ---------- base ---------- */
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font: 15px/1.6 system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  }
+  code, .mono, td.num, .id, .val {
+    font-family: ui-monospace, "Cascadia Mono", Consolas, Menlo, monospace;
+    font-variant-numeric: tabular-nums;
+  }
+  main {
+    max-width: 760px;
+    margin: 0 auto;
+    padding: 0 24px 64px;
+  }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover, a:focus-visible { text-decoration: underline; }
+  a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  section { border-top: 1px solid var(--hair); padding: 32px 0 8px; }
+  h2 {
+    margin: 0 0 4px;
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  .sub { margin: 0 0 20px; color: var(--muted); font-size: 14px; max-width: 60ch; }
+
+  /* ---------- header ---------- */
+  header {
+    display: flex;
+    align-items: baseline;
+    gap: 16px;
+    flex-wrap: wrap;
+    padding: 40px 0 12px;
+  }
+  .wordmark { font-size: 22px; font-weight: 700; letter-spacing: -0.01em; }
+  nav { margin-left: auto; display: flex; gap: 18px; font-size: 14px; }
+  .tagline { margin: 0 0 32px; color: var(--muted); font-size: 15px; max-width: 52ch; }
+
+  /* ---------- build strip ---------- */
+  .builds { display: flex; gap: 8px; flex-wrap: wrap; margin: 0 0 10px; }
+  .build {
+    border: 1px solid var(--hair);
+    border-radius: 999px;
+    padding: 5px 14px;
+    font-size: 13.5px;
+    color: var(--muted);
+    background: transparent;
+  }
+  .build.selected {
+    border-color: var(--accent);
+    color: var(--ink);
+    font-weight: 600;
+  }
+  .build.placeholder { border-style: dashed; color: var(--faint); }
+  .buildmeta { margin: 0 0 6px; font-size: 13px; color: var(--muted); }
+
+  /* ---------- tables ---------- */
+  .scroll { overflow-x: auto; margin: 0 0 12px; }
+  table { border-collapse: collapse; width: 100%; font-size: 13.5px; }
+  th {
+    text-align: left;
+    font-weight: 600;
+    font-size: 12px;
+    color: var(--muted);
+    padding: 6px 12px 6px 0;
+    border-bottom: 1px solid var(--hair);
+    white-space: nowrap;
+  }
+  td {
+    padding: 7px 12px 7px 0;
+    border-bottom: 1px solid var(--hair);
+    vertical-align: top;
+  }
+  tbody tr:hover { background: var(--soft); }
+  td.num, th.num { text-align: right; padding-right: 0; white-space: nowrap; }
+  .id { font-size: 12.5px; white-space: nowrap; }
+  .desc { display: block; color: var(--muted); font-size: 12px; font-family: system-ui, sans-serif; white-space: normal; }
+  .grouphead td {
+    padding-top: 16px;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--faint);
+    border-bottom: 1px solid var(--hair);
+  }
+  .grouphead:hover, tr.grouphead:hover { background: transparent; }
+
+  /* ---------- status ---------- */
+  .st { font-family: ui-monospace, Consolas, monospace; font-size: 12px; font-weight: 600; letter-spacing: 0.04em; white-space: nowrap; }
+  .st-pass { color: var(--pass); }
+  .st-fail { color: var(--fail); background: var(--fail-bg); padding: 1px 6px; border-radius: 3px; }
+  .st-unstable { color: var(--warn); background: var(--warn-bg); padding: 1px 6px; border-radius: 3px; }
+  .st-notrun, .st-pending { color: var(--faint); font-weight: 400; }
+  .legend { font-size: 13px; color: var(--muted); margin: 4px 0 20px; line-height: 2; }
+  .legend .st { margin-right: 2px; }
+
+  /* ---------- spread bar ---------- */
+  .spread { display: inline-flex; align-items: center; gap: 8px; white-space: nowrap; }
+  .bar { width: 64px; height: 4px; background: var(--soft); border-radius: 2px; overflow: hidden; flex: none; }
+  .bar i { display: block; height: 100%; background: var(--accent); border-radius: 2px; }
+  .withheld {
+    color: var(--muted);
+    background: var(--soft);
+    border: 1px solid var(--hair);
+    border-radius: 3px;
+    padding: 1px 7px;
+    font-size: 12px;
+    white-space: nowrap;
+  }
+  .flag { color: var(--faint); font-size: 11.5px; font-family: ui-monospace, Consolas, monospace; }
+
+  /* ---------- chart ---------- */
+  figure { margin: 0 0 8px; }
+  figcaption { font-size: 13px; color: var(--muted); margin-top: 6px; max-width: 60ch; }
+  .chart { width: 100%; height: auto; display: block; }
+  .chart .grid { stroke: var(--hair); stroke-width: 1; }
+  .chart .axis-label { fill: var(--faint); font: 11px ui-monospace, Consolas, monospace; }
+  .chart .x-label { fill: var(--muted); font: 12px ui-monospace, Consolas, monospace; }
+  .chart .pt-label { fill: var(--ink); font: 12px ui-monospace, Consolas, monospace; }
+  .chart .series { stroke: var(--accent); stroke-width: 2; fill: none; }
+  .chart .series-pending { stroke: var(--faint); stroke-width: 2; stroke-dasharray: 4 5; fill: none; }
+  .chart .dot { fill: var(--accent); }
+  .chart .dot-pending { fill: var(--bg); stroke: var(--faint); stroke-width: 2; }
+  .chart .pending-note { fill: var(--faint); font: 11px system-ui, sans-serif; }
+
+  /* ---------- footer ---------- */
+  footer {
+    border-top: 1px solid var(--hair);
+    padding: 24px 0 0;
+    font-size: 13px;
+    color: var(--muted);
+    max-width: 62ch;
+  }
+  footer p { margin: 0 0 10px; }
+
+  caption { text-align: left; caption-side: bottom; font-size: 13px; color: var(--muted); padding: 8px 0 0; }
+</style>
+</head>
+<body>
+<main>
+
+  <header>
+    <span class="wordmark">dm-bench</span>
+    <nav aria-label="site">
+      <a href="#">GitHub</a>
+      <a href="#">Method</a>
+      <a href="#">Data</a>
+    </nav>
+  </header>
+  <p class="tagline">Measured BYOND engine behaviour and cost, per build, reproducibly. The repository is the database; every figure below is backed by a version-stamped TSV baseline.</p>
+
+  <!-- build strip -->
+  <div class="builds" role="list" aria-label="engine builds">
+    <span class="build selected" role="listitem" aria-current="true">516.1666</span>
+    <span class="build" role="listitem">516.1685</span>
+    <span class="build placeholder" role="listitem">517.xxxx (placeholder)</span>
+  </div>
+  <p class="buildmeta mono">516.1666 &middot; windows &middot; main suite: 3 runs merged, 44 pass / 0 fail / 1 unstable, 86 measured &middot; del suite: 7 pass / 0 fail, 13 measured</p>
+  <p class="buildmeta">516.1685 has the del suite only; the main suite has not yet run on it. 517.xxxx is a placeholder for the next release.</p>
+
+  <!-- behaviour matrix -->
+  <section>
+    <h2>Behaviour</h2>
+    <p class="sub">Assertions encode engine behaviour with a known answer. A changed engine flips a cell to FAIL; that is the suite working. Representative selection, 16 of 52 assertions.</p>
+    <div class="scroll">
+      <table>
+        <thead>
+          <tr>
+            <th>assertion</th>
+            <th>516.1666</th>
+            <th>516.1685</th>
+            <th>517.xxxx</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr class="grouphead"><td colspan="4">main suite &middot; suite.dme</td></tr>
+          <tr>
+            <td><span class="id">lifetime.refcount_collects</span><span class="desc">unreferenced object is collected</span></td>
+            <td><span class="st st-pass">PASS</span></td>
+            <td><span class="st st-notrun">not yet run</span></td>
+            <td><span class="st st-pending">&middot;</span></td>
+          </tr>
+          <tr>
+            <td><span class="id">lifetime.cycle_not_collected</span><span class="desc">loc/contents cycle is never collected</span></td>
+            <td><span class="st st-pass">PASS</span></td>
+            <td><span class="st st-notrun">not yet run</span></td>
+            <td><span class="st st-pending">&middot;</span></td>
+          </tr>
+          <tr>
+            <td><span class="id">lifetime.del_src_aborts_proc</span><span class="desc">del(src) aborts the calling proc</span></td>
+            <td><span class="st st-pass">PASS</span></td>
+            <td><span class="st st-notrun">not yet run</span></td>
+            <td><span class="st st-pending">&middot;</span></td>
+          </tr>
+          <tr>
+            <td><span class="id">numeric.eq_at_2p24</span><span class="desc">16777216 == 16777217</span></td>
+            <td><span class="st st-pass">PASS</span></td>
+            <td><span class="st st-notrun">not yet run</span></td>
+            <td><span class="st st-pending">&middot;</span></td>
+          </tr>
+          <tr>
+            <td><span class="id">numeric.shift_24_zero</span><span class="desc">1 &lt;&lt; 24 yields 0, not a large number</span></td>
+            <td><span class="st st-pass">PASS</span></td>
+            <td><span class="st st-notrun">not yet run</span></td>
+            <td><span class="st st-pending">&middot;</span></td>
+          </tr>
+          <tr>
+            <td><span class="id">numeric.loop_nonterminating</span><span class="desc">for-loop past 2^24 does not terminate</span></td>
+            <td><span class="st st-pass">PASS</span></td>
+            <td><span class="st st-notrun">not yet run</span></td>
+            <td><span class="st st-pending">&middot;</span></td>
+          </tr>
+          <tr>
+            <td><span class="id">scheduler.spawn0_same_tick</span><span class="desc">spawn(0) runs in the same tick</span></td>
+            <td><span class="st st-pass">PASS</span></td>
+            <td><span class="st st-notrun">not yet run</span></td>
+            <td><span class="st st-pending">&middot;</span></td>
+          </tr>
+          <tr>
+            <td><span class="id">scheduler.spawn_context_is_copy</span><span class="desc">spawned block cannot write to the caller's locals</span></td>
+            <td><span class="st st-pass">PASS</span></td>
+            <td><span class="st st-notrun">not yet run</span></td>
+            <td><span class="st st-pending">&middot;</span></td>
+          </tr>
+          <tr>
+            <td><span class="id">movement.move_fires_callbacks</span><span class="desc">Move() fires Enter, Exit, Entered and Exited</span></td>
+            <td><span class="st st-pass">PASS</span></td>
+            <td><span class="st st-notrun">not yet run</span></td>
+            <td><span class="st st-pending">&middot;</span></td>
+          </tr>
+          <tr>
+            <td><span class="id">movement.loc_assign_skips_callbacks</span><span class="desc">assigning loc fires none of them</span></td>
+            <td><span class="st st-pass">PASS</span></td>
+            <td><span class="st st-notrun">not yet run</span></td>
+            <td><span class="st st-pending">&middot;</span></td>
+          </tr>
+          <tr>
+            <td><span class="id">io.write_cost_is_per_call_not_per_byte</span><span class="desc">write cost is dominated by the call, not the payload</span></td>
+            <td><span class="st st-pass">PASS</span></td>
+            <td><span class="st st-notrun">not yet run</span></td>
+            <td><span class="st st-pending">&middot;</span></td>
+          </tr>
+          <tr>
+            <td><span class="id">io.logging_does_not_perturb</span><span class="desc">a burst of writes does not shift a following measurement</span></td>
+            <td><span class="st st-unstable">UNSTABLE</span> <span class="flag">n=3 PASS/FAIL/PASS</span></td>
+            <td><span class="st st-notrun">not yet run</span></td>
+            <td><span class="st st-pending">&middot;</span></td>
+          </tr>
+          <tr class="grouphead"><td colspan="4">del suite &middot; suite_del.dme, own process</td></tr>
+          <tr>
+            <td><span class="id">del.zero_refs_is_free</span><span class="desc">del() is free when only a local points at the victim</span></td>
+            <td><span class="st st-pass">PASS</span></td>
+            <td><span class="st st-pass">PASS</span></td>
+            <td><span class="st st-pending">&middot;</span></td>
+          </tr>
+          <tr>
+            <td><span class="id">del.refcount_does_not_scale</span><span class="desc">256 references cost no more than 1</span></td>
+            <td><span class="st st-pass">PASS</span></td>
+            <td><span class="st st-pass">PASS</span></td>
+            <td><span class="st st-pending">&middot;</span></td>
+          </tr>
+          <tr>
+            <td><span class="id">del.live_count_drives_cost</span><span class="desc">del() cost rises sharply with live object count</span></td>
+            <td><span class="st st-pass">PASS</span></td>
+            <td><span class="st st-pass">PASS</span></td>
+            <td><span class="st st-pending">&middot;</span></td>
+          </tr>
+          <tr>
+            <td><span class="id">del.peak_leaves_residual</span><span class="desc">freeing the population does not restore the cold cost</span></td>
+            <td><span class="st st-pass">PASS</span></td>
+            <td><span class="st st-pass">PASS</span></td>
+            <td><span class="st st-pending">&middot;</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="legend">
+      <span class="st st-pass">PASS</span> behaviour matches the recorded answer &nbsp;&middot;&nbsp;
+      <span class="st st-fail">FAIL</span> behaviour changed in this build; no FAIL is on record for these builds, shown so a regression is recognisable &nbsp;&middot;&nbsp;
+      <span class="st st-unstable">UNSTABLE</span> verdict varied across the three merged runs &nbsp;&middot;&nbsp;
+      <span class="st st-notrun">not yet run</span> suite has not executed on this build &nbsp;&middot;&nbsp;
+      <span class="st st-pending">&middot;</span> build not yet released
+    </p>
+  </section>
+
+  <!-- measurements -->
+  <section>
+    <h2>Measurements &middot; 516.1666</h2>
+    <p class="sub">Median of three merged runs. A figure is never shown without its spread, and a row that failed a resolution or stability guard is withheld, not printed. The bar fills at 25% spread, the WIDE_SPREAD threshold.</p>
+    <div class="scroll">
+      <table>
+        <thead>
+          <tr>
+            <th>measurement</th>
+            <th class="num">value</th>
+            <th class="num">spread (n=3)</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><span class="id">alloc.obj</span><span class="desc">new /obj</span></td>
+            <td class="num">0.46 &micro;s</td>
+            <td class="num"><span class="spread"><span class="bar"><i style="width:8%"></i></span>2%</span></td>
+          </tr>
+          <tr>
+            <td><span class="id">alloc.mob</span><span class="desc">new /mob</span></td>
+            <td class="num">0.56 &micro;s</td>
+            <td class="num"><span class="spread"><span class="bar"><i style="width:8%"></i></span>2%</span></td>
+          </tr>
+          <tr>
+            <td><span class="id">movement.loc_assign</span><span class="desc">M.loc = T</span></td>
+            <td class="num">0.27 &micro;s</td>
+            <td class="num"><span class="spread"><span class="bar"><i style="width:44%"></i></span>11%</span></td>
+          </tr>
+          <tr>
+            <td><span class="id">movement.move_proc</span><span class="desc">M.Move(T)</span></td>
+            <td class="num">2.58 &micro;s</td>
+            <td class="num"><span class="spread"><span class="bar"><i style="width:16%"></i></span>4%</span></td>
+          </tr>
+          <tr>
+            <td><span class="id">view.inline_typed</span><span class="desc">for(mob in view(7,c))</span></td>
+            <td class="num">29.1 &micro;s</td>
+            <td class="num"><span class="spread"><span class="bar"><i style="width:48%"></i></span>12%</span></td>
+          </tr>
+          <tr>
+            <td><span class="id">view.build_only</span><span class="desc">var/list/V = view(7,c)</span></td>
+            <td class="num">250 &micro;s</td>
+            <td class="num"><span class="spread"><span class="bar"><i style="width:40%"></i></span>10%</span></td>
+          </tr>
+          <tr>
+            <td><span class="id">lists.in_n1000</span><span class="desc">needle in L, n=1000, worst case</span></td>
+            <td class="num">2.41 &micro;s</td>
+            <td class="num"><span class="spread"><span class="bar"><i style="width:4%"></i></span>1%</span></td>
+          </tr>
+          <tr>
+            <td><span class="id">lists.in_n5000</span><span class="desc">needle in L, n=5000, worst case</span></td>
+            <td class="num">11.4 &micro;s</td>
+            <td class="num"><span class="spread"><span class="bar"><i style="width:16%"></i></span>4%</span></td>
+          </tr>
+          <tr>
+            <td><span class="id">strings.findtext</span><span class="desc">findtext, 43-char haystack</span></td>
+            <td class="num">2.24 &micro;s</td>
+            <td class="num"><span class="spread"><span class="bar"><i style="width:36%"></i></span>9%</span></td>
+          </tr>
+          <tr>
+            <td><span class="id">profiler.overhead_multiple</span><span class="desc">profiled cost divided by unprofiled</span></td>
+            <td class="num">3.67x</td>
+            <td class="num"><span class="spread"><span class="bar"><i style="width:68%"></i></span>17%</span></td>
+          </tr>
+          <tr>
+            <td><span class="id">calls.builtin_abs</span><span class="desc">abs(x), hard builtin</span></td>
+            <td class="num"><span class="withheld">withheld</span></td>
+            <td class="num"><span class="flag">LOW_RESOLUTION</span></td>
+          </tr>
+          <tr>
+            <td><span class="id">view.radius_1</span><span class="desc">for(mob in view(1,c))</span></td>
+            <td class="num"><span class="withheld">withheld</span></td>
+            <td class="num"><span class="flag">WIDE_SPREAD, 34%</span></td>
+          </tr>
+          <tr>
+            <td><span class="id">vars.local</span><span class="desc">acc += local_var</span></td>
+            <td class="num"><span class="withheld">withheld</span></td>
+            <td class="num"><span class="flag">BASELINE_HEAVY, spread 100%</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- headline ratios -->
+  <section>
+    <h2>Headline ratios</h2>
+    <div class="scroll">
+      <table>
+        <thead>
+          <tr>
+            <th>faster form vs slower form</th>
+            <th class="num">ratio</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>for(var/mob/M in view()) instead of assigning view() to a var</td>
+            <td class="num">1.7x empty, 10x typical, 77x crowded</td>
+          </tr>
+          <tr>
+            <td>re-query view() instead of caching for two passes</td>
+            <td class="num">2.0 to 2.1x</td>
+          </tr>
+          <tr>
+            <td>range() instead of view() when line of sight is not needed</td>
+            <td class="num">2.3 to 3x</td>
+          </tr>
+          <tr>
+            <td>push from the event instead of polling from observers</td>
+            <td class="num">9.2 to 9.6x</td>
+          </tr>
+          <tr>
+            <td>thing = null instead of del(thing)</td>
+            <td class="num">~2,400x at 200k live objects</td>
+          </tr>
+          <tr>
+            <td>loc = instead of Move() when callbacks are not needed</td>
+            <td class="num">8.8x</td>
+          </tr>
+          <tr>
+            <td>associative list above 20 entries</td>
+            <td class="num">up to 70x</td>
+          </tr>
+          <tr>
+            <td>+= instead of .Add() for list building</td>
+            <td class="num">1.4x</td>
+          </tr>
+        </tbody>
+        <caption>Measured on 516.1666. Ratios travel between machines; absolute times do not.</caption>
+      </table>
+    </div>
+  </section>
+
+  <!-- across builds -->
+  <section>
+    <h2>Across builds</h2>
+    <p class="sub">del.live_200000: del() cost with 200,000 live objects. One measurement per build from the del suite; the 517.xxxx point is a placeholder, no data exists.</p>
+    <figure>
+      <svg class="chart" viewBox="0 0 560 175" role="img" aria-label="Line chart of del cost at 200k live objects across builds: 2398.5 microseconds on 516.1666, 2590.4 on 516.1685, 517.xxxx pending.">
+        <!-- grid -->
+        <line class="grid" x1="70" y1="130"   x2="530" y2="130"/>
+        <line class="grid" x1="70" y1="93.3"  x2="530" y2="93.3"/>
+        <line class="grid" x1="70" y1="56.7"  x2="530" y2="56.7"/>
+        <line class="grid" x1="70" y1="20"    x2="530" y2="20"/>
+        <text class="axis-label" x="62" y="134"  text-anchor="end">0</text>
+        <text class="axis-label" x="62" y="97.3" text-anchor="end">1000</text>
+        <text class="axis-label" x="62" y="60.7" text-anchor="end">2000</text>
+        <text class="axis-label" x="62" y="24"   text-anchor="end">3000 &micro;s</text>
+        <!-- series -->
+        <polyline class="series" points="140,42.1 300,35.0"/>
+        <line class="series-pending" x1="300" y1="35.0" x2="460" y2="35.0"/>
+        <circle class="dot" cx="140" cy="42.1" r="4"><title>516.1666: 2398.5 &micro;s</title></circle>
+        <circle class="dot" cx="300" cy="35.0" r="4"><title>516.1685: 2590.4 &micro;s</title></circle>
+        <circle class="dot-pending" cx="460" cy="35.0" r="4"><title>517.xxxx: no data, placeholder</title></circle>
+        <!-- direct labels -->
+        <text class="pt-label" x="140" y="66" text-anchor="middle">2398.5</text>
+        <text class="pt-label" x="300" y="24" text-anchor="middle">2590.4</text>
+        <text class="pending-note" x="460" y="24" text-anchor="middle">pending</text>
+        <!-- x labels -->
+        <text class="x-label" x="140" y="155" text-anchor="middle">516.1666</text>
+        <text class="x-label" x="300" y="155" text-anchor="middle">516.1685</text>
+        <text class="x-label" x="460" y="155" text-anchor="middle">517.xxxx</text>
+        <text class="pending-note" x="460" y="170" text-anchor="middle">(placeholder)</text>
+      </svg>
+      <figcaption>Both real points are within the suite's observed run-to-run variance; this chart does not claim a regression. Axis starts at zero.</figcaption>
+    </figure>
+  </section>
+
+  <footer>
+    <p>Method: every baseline is three runs merged; median and spread published; under-resolved rows withheld, not printed. del() measurements run in their own process because peak live population permanently changes later readings.</p>
+    <p>Absolute times are machine-specific. Ratios travel.</p>
+    <p>Static mockup. Navigation links are placeholders.</p>
+  </footer>
+
+</main>
+</body>
+</html>
