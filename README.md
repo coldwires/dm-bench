@@ -1,4 +1,4 @@
-# BYOND benchmark suite
+# dm-bench
 
 Measures the cost and behaviour of BYOND engine operations, against a named
 build, reproducibly.
