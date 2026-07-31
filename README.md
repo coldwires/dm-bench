@@ -66,6 +66,13 @@ used. Extract a release into a new folder and the runner finds it.
 .\run.ps1 -Suite suite -Version all
 ```
 
+Runs execute DreamDaemon at High process priority by default, which halves the
+between-run spread of long rows (see Precision); pass `-Priority Normal` to
+override. The runner stamps `# runner_priority` into each result file, and
+`merge-runs.ps1` refuses to merge runs taken at different priorities, because
+priority changes measured spread. Baselines dated before 2026-07-31 predate the
+stamp and were taken at normal priority.
+
 Manually:
 
 ```
@@ -146,10 +153,15 @@ framework.
 figures were re-derived after the original timing method proved too coarse to
 distinguish them, and are stable.
 
-`suite.dme`, three runs merged: 46 assertions, 86 measurements, 45 passed, 0
-failed, 1 unstable. 12 of 86 rows vary by more than 25% between runs on the same
-build, down from 26 of 77 earlier. The one unstable assertion has since been
-removed as unsound and the merge predates that change.
+`suite.dme`, three High-priority runs merged: 45 assertions, 86 measurements,
+45 passed, 0 failed, 0 unstable, 18 of 86 rows varying more than 25% across the
+triple. One assertion, the write-cost-per-call comparison, failed 2 of 9 runs
+taken the same day: its threshold sits inside the noise band of two single-shot
+quantized timings, and it is being reworked to use medians with headroom. A
+clean triple does not disprove instability. A normal-priority triple from the
+same day is kept alongside as `516.1666-windows-normal-priority.tsv`; the count
+of wide rows tracks ambient machine load and ranged 11 to 30 across same-day
+triples.
 
 ### Precision
 
@@ -168,6 +180,12 @@ large ones. Rows over 10 us run for seconds, have negligible quantization and
 subtract no baseline, and still scatter 15%. That floor is machine variance:
 scheduling, thermal behaviour, cache state. It survived sleeps between
 measurements, order rotation, a discarded warm-up round and eight samples.
+
+About half of the long-row floor is OS scheduling, measured directly: running
+DreamDaemon at High priority took rows over 10 us from 18.3% to 9.9% median
+spread, three interleaved runs per condition. High priority has been the
+runner default since 2026-07-31. The remainder is thermal and cache state and
+does not yield to priority or to any choice of clock.
 
 The clock is not the limit. `world.tick_usage` measures linear to within 2.4%
 across a 500x range of workload.

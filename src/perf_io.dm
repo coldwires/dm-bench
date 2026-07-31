@@ -104,14 +104,21 @@ proc
 		// This is the question that decides whether results.tsv should move to
 		// world.log. If a burst of writes shifts a stable reference workload,
 		// every row after a row is suspect.
-		// Each reference is a median of three. Measured 2026-07-31: with a single
-		// reading per arm this assertion flipped PASS/PASS/FAIL across three runs
-		// of 516.1666, because ref_a drifted 0.11 to 0.19 us while the two
-		// post-write arms held steady at 0.12 to 0.14. The control was the
-		// unreliable part, not the thing under test. Any assertion comparing two
-		// measurements needs both sides medianed, not just the interesting one.
+		// Each reference is a median of three; with single readings this flipped
+		// because the reference drifted 0.11 to 0.19 us while the post-write
+		// arms held. Medianing stabilised the reference at 0.14 to 0.15 across
+		// six runs, and the assertion then flipped again anyway: the arms read
+		// monotonically lower in measurement order, and that drift alone spent
+		// the whole 25% tolerance (VERIFICATION 8.10). So the tolerance now
+		// carries a measured drift allowance: a warm-up arm is discarded, two
+		// back-to-back reference arms with nothing between them measure what
+		// the machine drifts on its own, and the perturbed arms are compared
+		// against the adjacent control rather than the section's first reading.
 		var/R = 10000000
+		IO_RefMedian(R)                  // warm-up, discarded: the first arm reads high
 		var/ref_a = IO_RefMedian(R)
+		var/ref_ctl = IO_RefMedian(R)    // nothing between these two: pure drift
+		var/drift = abs(ref_ctl - ref_a)
 		for(var/i = 1 to 500)
 			probe << "perturbation probe line [i]"
 		var/ref_b = IO_RefMedian(R)
@@ -119,9 +126,10 @@ proc
 			world.log << "perturbation probe line [i]"
 		var/ref_c = IO_RefMedian(R)
 
+		var/tol = ref_ctl * 0.25 + drift
 		Assert("io.logging_does_not_perturb", "io",
 			"a burst of writes does not shift a following measurement",
-			(abs(ref_b - ref_a) < ref_a * 0.25 && abs(ref_c - ref_a) < ref_a * 0.25) ? 1 : 0, 1,
-			"reference [round(ref_a, 0.001)] us, after 500 file writes [round(ref_b, 0.001)], after 500 world.log [round(ref_c, 0.001)]")
+			(abs(ref_b - ref_ctl) < tol && abs(ref_c - ref_ctl) < tol) ? 1 : 0, 1,
+			"control [round(ref_ctl, 0.001)] us, own drift [round(drift, 0.001)], after 500 file writes [round(ref_b, 0.001)], after 500 world.log [round(ref_c, 0.001)]")
 
 		fdel("io_probe.tmp")
