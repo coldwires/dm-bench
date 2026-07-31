@@ -23,6 +23,10 @@ param(
     [string]$Version = "all",
     [int]$Port       = 47899,
     [int]$TimeoutSec = 900,
+    # High is the baseline standard since 2026-07-31: it halved the median
+    # spread of rows over 10 us (18.3% to 9.9%). Pass Normal to override.
+    [ValidateSet('Normal', 'AboveNormal', 'High')]
+    [string]$Priority = 'High',
     [switch]$List
 )
 
@@ -102,8 +106,13 @@ foreach ($b in $targets) {
 
     $before = Get-ChildItem $wd -Filter "results-*.tsv" | Select-Object -ExpandProperty Name
 
+    $started = Get-Date
     $sw = [Diagnostics.Stopwatch]::StartNew()
     $p = Start-Process -FilePath $b.Dd -ArgumentList "$Suite.dmb $port -trusted -invisible" -WorkingDirectory $wd -PassThru -NoNewWindow
+    if ($Priority -ne 'Normal') {
+        $p.PriorityClass = $Priority
+        "  priority: $($p.PriorityClass)"
+    }
     if (-not $p.WaitForExit($TimeoutSec * 1000)) {
         Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue
         Write-Error "timed out after ${TimeoutSec}s on $($b.Label)"
@@ -112,7 +121,9 @@ foreach ($b in $targets) {
     $sw.Stop()
     "  ran in $([int]$sw.Elapsed.TotalSeconds)s"
 
-    $produced = Get-ChildItem $wd -Filter "results-*.tsv" | Where-Object { $before -notcontains $_.Name -or $_.LastWriteTime -gt $sw.Elapsed }
+    # A pre-existing file counts only if this run rewrote it. Compare against the
+    # run's start time; comparing against $sw.Elapsed (a TimeSpan) throws.
+    $produced = Get-ChildItem $wd -Filter "results-*.tsv" | Where-Object { $before -notcontains $_.Name -or $_.LastWriteTime -gt $started }
     if (-not $produced) { $produced = Get-ChildItem $wd -Filter "results-*.tsv" | Sort-Object LastWriteTime -Descending | Select-Object -First 1 }
     if (-not $produced) { Write-Error "no results file produced on $($b.Label)"; continue }
 
@@ -124,6 +135,9 @@ foreach ($b in $targets) {
             Write-Error "result header says $ver.$stamped but binaries report $($b.Reported)"
             continue
         }
+        # The suite cannot see its own process priority, so the runner stamps
+        # it. merge-runs.ps1 refuses to merge runs of mixed priority.
+        [System.IO.File]::AppendAllText($f.FullName, "# runner_priority`t$Priority`r`n", (New-Object System.Text.UTF8Encoding($false)))
         Copy-Item $f.FullName (Join-Path $ResultsDir $f.Name) -Force
         $res = (Select-String -Path $f.FullName -Pattern '^# (passed|failed|measured|low_resolution|result)\s+(\S+)') |
                ForEach-Object { "{0}={1}" -f $_.Matches.Groups[1].Value, $_.Matches.Groups[2].Value }

@@ -68,6 +68,12 @@ if ($systems.Count -ne 1) { throw "runs are from different systems: $($systems -
 $suites = @($parsed | ForEach-Object { $_.Meta['suite'] } | Sort-Object -Unique)
 if ($suites.Count -ne 1) { throw "runs are from different suites: $($suites -join ', ')" }
 
+# Process priority changes measured spread (INSTRUMENTS.md), so a merge across
+# priorities would blend two measurement conditions. Runs predating the stamp
+# count as Normal, which is what they were.
+$prios = @($parsed | ForEach-Object { if ($_.Meta['runner_priority']) { $_.Meta['runner_priority'] } else { 'Normal' } } | Sort-Object -Unique)
+if ($prios.Count -ne 1) { throw "runs are from mixed priorities: $($prios -join ', ')" }
+
 # A run that died early would otherwise contribute its prefix and look merged.
 $counts = @($parsed | ForEach-Object { $_.Rows.Count } | Sort-Object -Unique)
 if ($counts.Count -ne 1) {
@@ -92,6 +98,7 @@ $lines.Add("# suite`t$($suites[0])")
 $lines.Add("# byond_version`t$($parsed[0].Meta['byond_version'])")
 $lines.Add("# byond_build`t$($parsed[0].Meta['byond_build'])")
 $lines.Add("# system`t$system")
+$lines.Add("# runner_priority`t$($prios[0])")
 $lines.Add("# merged_runs`t$($parsed.Count)")
 # Each run writes the same filename inside its own directory, so the leaf alone
 # does not identify which run contributed what. Keep the parent.
