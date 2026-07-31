@@ -351,10 +351,13 @@ proc
 		var/t0 = world.timeofday
 		for(var/i = 1 to R)
 		var/bare = world.timeofday - t0
+		#pragma push
+		#pragma ignore no_effect
 		var/t1 = world.timeofday
 		for(var/i = 1 to R)
 			istype(P, /obj/fw_probe)
 		var/discarded = world.timeofday - t1
+		#pragma pop
 		Assert("framework.discarded_work_still_costs", "framework",
 			"an expression whose result is unused is still executed",
 			(discarded > bare * 1.3) ? 1 : 0, 1,

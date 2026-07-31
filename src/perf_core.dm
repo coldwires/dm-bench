@@ -132,6 +132,13 @@ proc
 		// future build that optimises it away fails loudly instead of silently
 		// reporting every row as near zero.
 
+		// Unrolling a discarded expression is exactly what no_effect is designed
+		// to catch, so each X10 emits ten identical warnings at one line number.
+		// Scoped suppression, not a global one: outside this block the warning is
+		// wanted, because there it means someone wrote a statement by mistake.
+		#pragma push
+		#pragma ignore no_effect
+
 		var/t0 = world.timeofday
 		for(var/i = 1 to R / UNROLL)
 			X10(istype(W, /obj/pc_thing))
@@ -156,6 +163,8 @@ proc
 		for(var/i = 1 to R / UNROLL)
 			X10(locate(/obj/pc_thing) in W)
 		MeasureU("dispatch.locate_in_contents", "dispatch", "locate(type) in O, 1 item", world.timeofday - t4, R, UNROLL, null)
+
+		#pragma pop
 
 		inner.loc = null
 

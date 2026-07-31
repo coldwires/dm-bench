@@ -1,0 +1,131 @@
+// Standalone demonstration of the no_effect warnings the unrolled measurement
+// form produces, and the alternatives.
+//
+// Build:  byond-standalones\516.1666\bin\dm.exe noeffect.dme
+// Run:    byond-standalones\516.1666\bin\dd.exe noeffect.dmb 47905 -trusted -invisible
+//         writes noeffect-out.txt beside the .dmb
+//
+// Nothing here is part of either suite. It exists so the warning trade-off can
+// be seen and compiled without running a 5 minute benchmark.
+//
+// ---------------------------------------------------------------------------
+// WHY THE WARNING EXISTS
+//
+// A measured row subtracts an empty-loop baseline. The old form was
+//
+//     for(var/i = 1 to R)
+//         if(istype(W, /obj/thing)) CACC++
+//
+// which charges the row for a loop iteration AND an accumulator. On 516.1666
+// that subtracted baseline was 40.7% of the reading, so the published number
+// moved with baseline calibration about as much as with the engine.
+//
+// Removing the accumulator and repeating the expression inside one iteration
+// takes that to 3.4%. But an expression whose result is unused is exactly what
+// the compiler warns about, so every unrolled copy emits one warning. Ten copies
+// per measurement, five measurements per section.
+// ---------------------------------------------------------------------------
+
+#define X10(s) s; s; s; s; s; s; s; s; s; s
+
+var/global/OUT
+var/global/SINK = 0
+
+obj/thing
+	var/flags = 1
+
+proc
+	Say(t)
+		if(!OUT) OUT = file("noeffect-out.txt")
+		OUT << t
+
+world
+	fps = 20
+	loop_checks = 0
+	name = "noeffect"
+
+	New()
+		..()
+		spawn(1)
+			var/obj/thing/W = new
+
+			// 12M, not more: form B is a single un-unrolled loop and a for()
+			// cannot exceed 2^24 = 16,777,216 iterations. Past that `i`
+			// saturates and the loop never exits, with loop_checks off to
+			// remove the engine's escape hatch.
+			var/R = 12000000
+			var/L = R / 10
+
+			// Timed with tick_usage, not timeofday. At 4M operations these forms
+			// differ by well under one decisecond, so timeofday reported all of
+			// them as identical. Calibrate us-per-percent against a long
+			// timeofday run first.
+			var/z = 0
+			var/ct0 = world.timeofday
+			var/cu0 = world.tick_usage
+			for(var/o = 1 to 6)
+				for(var/i = 1 to 10000000)
+					z++
+			var/US_PCT = ((world.tick_usage - cu0) > 0) ? ((world.timeofday - ct0) * 100000 / (world.tick_usage - cu0)) : 500
+			if(z < 0) Say("unreachable")
+
+			// ---- FORM A: what the suite does now. 10 warnings from one line ----
+			// dm.exe reports:
+			//   noeffect.dme:NN:warning (no_effect): istype: statement has no effect
+			// ten times, once per macro expansion.
+			var/ta = world.tick_usage
+			for(var/i = 1 to L)
+				X10(istype(W, /obj/thing))
+			var/a = world.tick_usage - ta
+
+			// ---- FORM B: the old form. No warning, but pays for the accumulator ----
+			SINK = 0
+			var/tb = world.tick_usage
+			for(var/i = 1 to R)
+				if(istype(W, /obj/thing)) SINK++
+			var/b = world.tick_usage - tb
+
+			// ---- FORM C: assign to a global. No warning. Costs a global write ----
+			var/tc = world.tick_usage
+			for(var/i = 1 to L)
+				X10(SINK = istype(W, /obj/thing))
+			var/c = world.tick_usage - tc
+
+			// ---- FORM D: assign to a local. No warning. Costs a local write ----
+			var/sink_local = 0
+			var/td = world.tick_usage
+			for(var/i = 1 to L)
+				X10(sink_local = istype(W, /obj/thing))
+			var/d = world.tick_usage - td
+
+			// ---- baseline: bare loop, unrolled the same way ----
+			// A bodyless for() is legal only when the next statement is at the
+			// SAME indent. Dedenting straight out is "invalid expression".
+			var/guard = 0
+			var/te = world.tick_usage
+			for(var/i = 1 to L)
+				guard++
+			var/e = world.tick_usage - te
+
+			if(sink_local < 0 || guard < 0) Say("unreachable")
+
+			Say("byond [world.byond_version].[world.byond_build], [R] operations each")
+			Say("clock tick_usage, [round(US_PCT,1)] us per percent")
+			Say("")
+			Say("form                             us/op    warnings")
+			Say("A discarded, unrolled x10        [round(a*US_PCT/R,0.0001)]   10 per line")
+			Say("B if(op) acc++, not unrolled     [round(b*US_PCT/R,0.0001)]   none")
+			Say("C global assign, unrolled x10    [round(c*US_PCT/R,0.0001)]   none")
+			Say("D local assign, unrolled x10     [round(d*US_PCT/R,0.0001)]   none")
+			Say("  loop only, unrolled x10        [round(e*US_PCT/R,0.0001)]   none")
+			Say("")
+			Say("net after subtracting the loop:")
+			Say("  A [round((a-e)*US_PCT/R,0.0001)] us")
+			Say("  C [round((c-e)*US_PCT/R,0.0001)] us")
+			Say("  D [round((d-e)*US_PCT/R,0.0001)] us")
+			Say("")
+			Say("The gap between A and C or D is what the sink costs, and it is")
+			Say("charged to every row that uses one.")
+			Say("done")
+			sleep(5)
+			shutdown()
