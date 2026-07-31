@@ -22,6 +22,7 @@ var/global/PASSED = 0
 var/global/FAILED = 0
 var/global/MEASURED = 0
 var/global/LOWRES = 0
+var/global/HEAVY = 0
 
 // Every measurement should run this long. Below it, world.timeofday's 0.1s
 // resolution dominates and the number is noise. Rows under this are flagged.
@@ -59,6 +60,12 @@ var/global/US_PER_PCT = 0
 // exactly how the del() rows looked fine while flipping. Flag when the delta is
 // a smaller fraction of the larger arm than this.
 #define MIN_DELTA_FRAC 0.1
+
+// A sub_baseline row where the subtracted term is more than this fraction of the
+// raw reading is dominated by baseline calibration rather than by the operation.
+// Advisory, not disqualifying: it does not mean the figure is wrong, it means
+// the figure will not repeat to the precision it is printed at.
+#define BASELINE_HEAVY_FRAC 0.25
 
 proc
 	// The run names its own output after the engine that produced it, so a
@@ -106,16 +113,35 @@ proc
 	// ---- measurements ----
 
 	// dt is deciseconds from world.timeofday. reps is the iteration count.
-	// sub_baseline strips the empty-loop cost, which matters below ~1 us.
+	//
+	// sub_baseline strips the empty-loop cost. That subtraction is not free: it
+	// makes the row a DIFFERENCE, with all the error behaviour of one. Measured
+	// 2026-07-31 across three runs of 516.1666, BASE_US itself moved 0.06 to
+	// 0.08, and on 25 rows it is a quarter or more of the raw figure. Its error
+	// is systematic across every such row, not random, because it is calibrated
+	// once per run. The flags below make that visible instead of silent.
 	Measure(id, category, name, dt, reps, sub_baseline, notes)
 		var/raw = dt * 100000 / reps
-		var/val = sub_baseline ? (raw - BASE_US) : raw
-		if(val < 0) val = 0
-		MEASURED++
+		var/val = raw
 		var/flag = ""
+		if(sub_baseline)
+			val = raw - BASE_US
+			if(val <= 0)
+				// The operation is indistinguishable from an empty loop. This is
+				// the ABSENCE of a measurement. It used to be clamped to 0 and
+				// published as "0.00 us", which reads as a very fast operation.
+				val = 0
+				flag = "BELOW_BASELINE"
+			else if(raw > 0 && (BASE_US / raw) > BASELINE_HEAVY_FRAC)
+				// Most of this figure is the subtracted term. Not noise exactly,
+				// but the row moves with baseline calibration rather than with
+				// the operation, so it will not repeat across runs.
+				flag = "BASELINE_HEAVY"
+		MEASURED++
 		if(dt < MIN_DS)
-			LOWRES++
 			flag = "LOW_RESOLUTION"
+		if(flag == "LOW_RESOLUTION" || flag == "BELOW_BASELINE") LOWRES++
+		else if(flag == "BASELINE_HEAVY") HEAVY++
 		var/n = notes ? notes : ""
 		if(flag) n = n ? "[flag]; [n]" : flag
 		Row("MEASURE\t[id]\t[category]\t[name]\t[val >= 10 ? round(val,0.1) : round(val,0.01)]\tus\t\t\t[dt]\t[n]")
@@ -162,6 +188,11 @@ proc
 		MEASURED++
 		Row("MEASURE\t[id]\t[category]\t[name]\t[val]\t[unit]\t\t\t\t[notes ? notes : ""]")
 
+	Median3(a, b, c)
+		if((a <= b && b <= c) || (c <= b && b <= a)) return b
+		if((b <= a && a <= c) || (c <= a && a <= b)) return a
+		return c
+
 	// ---- clock calibration ----
 
 	// Derives us-per-tick-usage-percent against a timeofday run long enough that
@@ -194,20 +225,38 @@ proc
 
 	// A single for-loop cannot exceed 2^24 iterations (see assert_numeric),
 	// and 16.7M at ~0.06us only reaches 10 ds. Nest to get enough runtime.
-	CalibrateBaseline()
+	// One pass of the empty loop. A single for() cannot exceed 2^24 iterations,
+	// so this nests.
+	EmptyLoopPass(outer, inner)
 		var/acc = 0
-		var/outer = 5
-		var/inner = 10000000
-		var/reps = outer * inner
 		var/t0 = world.timeofday
 		for(var/o = 1 to outer)
 			for(var/i = 1 to inner)
 				acc++
 		var/dt = world.timeofday - t0
 		if(acc < 0) Row("# unreachable")
+		return dt
+
+	// Median of three, not one.
+	//
+	// BASE_US is subtracted from every sub-microsecond row, so its error is
+	// SYSTEMATIC across all of them rather than random: a baseline 0.01 high
+	// pushes forty figures 0.01 low, in the same direction, and no amount of
+	// repeating the suite on one build would reveal it. Measured across three
+	// runs of 516.1666 on 2026-07-31, a single-reading baseline moved 0.06 to
+	// 0.08, a 29% swing on the term being subtracted.
+	CalibrateBaseline()
+		var/outer = 5
+		var/inner = 10000000
+		var/reps = outer * inner
+		var/a = EmptyLoopPass(outer, inner)
+		var/b = EmptyLoopPass(outer, inner)
+		var/c = EmptyLoopPass(outer, inner)
+		var/dt = Median3(a, b, c)
 		BASE_US = dt * 100000 / reps
-		Measure("framework.empty_loop", "framework", "empty loop iteration", dt, reps, 0, "baseline, subtracted from sub-microsecond rows")
+		Measure("framework.empty_loop", "framework", "empty loop iteration", dt, reps, 0, "baseline, median of 3, subtracted from sub-microsecond rows")
 		Row("# baseline_us\t[round(BASE_US, 0.01)]")
+		Row("# baseline_passes_ds\t[a] [b] [c]")
 
 	// Wraps a suite call and records how long that section took, so the slow
 	// parts are identified by measurement rather than by guessing.
@@ -220,4 +269,5 @@ proc
 		Row("# failed\t[FAILED]")
 		Row("# measured\t[MEASURED]")
 		Row("# low_resolution\t[LOWRES]")
+		Row("# baseline_heavy\t[HEAVY]")
 		Row("# result\t[FAILED ? "FAIL" : "PASS"]")

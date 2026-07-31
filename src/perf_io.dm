@@ -26,6 +26,14 @@ proc
 			IOACC += i % 7
 		return world.timeofday - t0
 
+	// Median of three passes, in us per iteration. A single pass of this
+	// reference is not stable enough to compare against.
+	IO_RefMedian(reps)
+		var/a = IO_Reference(reps)
+		var/b = IO_Reference(reps)
+		var/c = IO_Reference(reps)
+		return Median3(a, b, c) * 100000 / reps
+
 	Suite_IO()
 		var/probe = file("io_probe.tmp")
 
@@ -96,14 +104,20 @@ proc
 		// This is the question that decides whether results.tsv should move to
 		// world.log. If a burst of writes shifts a stable reference workload,
 		// every row after a row is suspect.
+		// Each reference is a median of three. Measured 2026-07-31: with a single
+		// reading per arm this assertion flipped PASS/PASS/FAIL across three runs
+		// of 516.1666, because ref_a drifted 0.11 to 0.19 us while the two
+		// post-write arms held steady at 0.12 to 0.14. The control was the
+		// unreliable part, not the thing under test. Any assertion comparing two
+		// measurements needs both sides medianed, not just the interesting one.
 		var/R = 10000000
-		var/ref_a = IO_Reference(R) * 100000 / R
+		var/ref_a = IO_RefMedian(R)
 		for(var/i = 1 to 500)
 			probe << "perturbation probe line [i]"
-		var/ref_b = IO_Reference(R) * 100000 / R
+		var/ref_b = IO_RefMedian(R)
 		for(var/i = 1 to 500)
 			world.log << "perturbation probe line [i]"
-		var/ref_c = IO_Reference(R) * 100000 / R
+		var/ref_c = IO_RefMedian(R)
 
 		Assert("io.logging_does_not_perturb", "io",
 			"a burst of writes does not shift a following measurement",
