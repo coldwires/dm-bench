@@ -34,6 +34,13 @@ proc
 		var/c = IO_Reference(reps)
 		return Median3(a, b, c) * 100000 / reps
 
+	// One timed pass of `reps` writes of `line` to `f`, in deciseconds.
+	IO_WritePass(f, line, reps)
+		var/t0 = world.timeofday
+		for(var/i = 1 to reps)
+			f << line
+		return world.timeofday - t0
+
 	Suite_IO()
 		var/probe = file("io_probe.tmp")
 
@@ -61,26 +68,32 @@ proc
 			"world.time [lt0] before, [lt1] after 4000 writes")
 
 		// --- cost per write ---
-		var/t0 = world.timeofday
-		for(var/i = 1 to 8000)
-			probe << "short line"
+		// VERIFICATION 8.11: as single 8000-write passes these arms are 15 to
+		// 22 timeofday quanta wide, and the ratio between two such readings
+		// ranged 0.90 to 1.53 on identical code, flipping the old 1.5x
+		// assertion in 2 of 9 runs. Median of three passes per arm, and the
+		// threshold carries headroom: 2x still separates per-call dominance
+		// decisively, since per-byte cost would put 100x the payload near
+		// 100x the price.
+		var/sdt = Median3(IO_WritePass(probe, "short line", 8000), \
+			IO_WritePass(probe, "short line", 8000), \
+			IO_WritePass(probe, "short line", 8000))
 		var/short_us = Measure("io.file_write_short", "io", "file << 10-char line",
-			world.timeofday - t0, 8000, 1, null)
+			sdt, 8000, 1, "median of 3 passes")
 
 		var/long_line = IO_LongLine()
-		var/t1 = world.timeofday
-		for(var/i = 1 to 8000)
-			probe << long_line
+		var/ldt = Median3(IO_WritePass(probe, long_line, 8000), \
+			IO_WritePass(probe, long_line, 8000), \
+			IO_WritePass(probe, long_line, 8000))
 		var/long_us = Measure("io.file_write_long", "io", "file << 1000-char line",
-			world.timeofday - t1, 8000, 1, null)
+			ldt, 8000, 1, "median of 3 passes")
 
-		// Measured: 1000 chars costs ~7% more than 10 chars. The syscall
-		// dominates, not the payload. Batching lines into one write is
-		// therefore close to free per extra line.
+		// The syscall dominates, not the payload. Batching lines into one
+		// write is therefore close to free per extra line.
 		Assert("io.write_cost_is_per_call_not_per_byte", "io",
 			"write cost is dominated by the call, not the payload",
-			(long_us < short_us * 1.5) ? 1 : 0, 1,
-			"[round(short_us,2)] us at 10 chars, [round(long_us,2)] us at 1000 chars, 100x the data")
+			(long_us < short_us * 2) ? 1 : 0, 1,
+			"[round(short_us,2)] us at 10 chars, [round(long_us,2)] us at 1000 chars, 100x the data, medians of 3")
 
 		var/t2 = world.timeofday
 		for(var/i = 1 to 400000)

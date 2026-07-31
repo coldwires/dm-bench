@@ -26,6 +26,12 @@ obj/pc_thing
 		flags = 0
 		list/cats
 
+// Depth-8 chains for the istype scaling rows (VERIFICATION 6.1). The obj
+// chain carries the istype forms; the mob chain exists for the typesof
+// control, which the source claim specifically names as still O(depth).
+obj/pc_d1/d2/d3/d4/d5/d6/d7/d8
+mob/pc_m1/m2/m3/m4/m5/m6/m7/m8
+
 turf/pc_turf
 	Enter(atom/movable/A)
 		MV_ENTER++
@@ -164,7 +170,78 @@ proc
 			X10(locate(/obj/pc_thing) in W)
 		MeasureU("dispatch.locate_in_contents", "dispatch", "locate(type) in O, 1 item", world.timeofday - t4, R, UNROLL, null)
 
+		// ---- istype scaling, VERIFICATION 6.1 ----
+		// The claim (O(1) since 514.1579) is about DEPTH and RELATEDNESS, and
+		// dispatch.istype above varies neither: one type, depth 1, tested
+		// against the variable's own declared type. These rows vary both, in
+		// UNTYPED vars so no declared-type best case applies. The discarded
+		// unrolled form does identical work for hits and misses, so no
+		// branch-taken confound applies (the accumulator form charges hits an
+		// extra 0.027 us for the taken branch, see INSTRUMENTS.md).
+		var/UD = new/obj/pc_d1/d2/d3/d4/d5/d6/d7/d8
+		var/US = new/obj/pc_d1
+
+		var/t5 = world.timeofday
+		for(var/i = 1 to R / UNROLL)
+			X10(istype(US, /obj/pc_d1))
+		var/it_d1 = MeasureU("dispatch.istype_d1", "dispatch", "istype, depth-1 hit, untyped var", world.timeofday - t5, R, UNROLL, null)
+
+		var/t6 = world.timeofday
+		for(var/i = 1 to R / UNROLL)
+			X10(istype(UD, /obj/pc_d1/d2/d3/d4/d5/d6/d7/d8))
+		var/it_d8 = MeasureU("dispatch.istype_d8", "dispatch", "istype, depth-8 exact hit", world.timeofday - t6, R, UNROLL, null)
+
+		var/t7 = world.timeofday
+		for(var/i = 1 to R / UNROLL)
+			X10(istype(UD, /obj/pc_d1))
+		var/it_anc = MeasureU("dispatch.istype_ancestor", "dispatch", "istype, depth-8 instance vs depth-1 ancestor", world.timeofday - t7, R, UNROLL, null)
+
+		var/t8 = world.timeofday
+		for(var/i = 1 to R / UNROLL)
+			X10(istype(US, /mob/pc_m1))
+		var/it_miss = MeasureU("dispatch.istype_unrelated", "dispatch", "istype, unrelated-branch miss", world.timeofday - t8, R, UNROLL, null)
+
 		#pragma pop
+
+		// The control the source claim names: typesof() on mob types should
+		// still scale, d1 returning 9 types against d8's 1. If istype comes
+		// out flat AND this pair comes out flat, the harness is measuring
+		// nothing and the ordering assertion below fails loudly.
+		// TSGUARD's branch is never taken, identically in both arms, so the
+		// list stays live without an accumulator saturating (8M x 9 would
+		// pass 2^24; see assert_numeric).
+		var/Rt = 8000000
+		var/TSGUARD = 0
+
+		var/t9 = world.timeofday
+		for(var/i = 1 to Rt)
+			var/list/L = typesof(/mob/pc_m1)
+			if(L.len < 0) TSGUARD++
+		var/ts_d1 = Measure("dispatch.typesof_d1", "dispatch", "typesof, depth-1 mob type, 9 subtypes", world.timeofday - t9, Rt, 1, null)
+
+		var/t10 = world.timeofday
+		for(var/i = 1 to Rt)
+			var/list/L = typesof(/mob/pc_m1/m2/m3/m4/m5/m6/m7/m8)
+			if(L.len < 0) TSGUARD++
+		var/ts_d8 = Measure("dispatch.typesof_d8", "dispatch", "typesof, depth-8 mob type, 1 subtype", world.timeofday - t10, Rt, 1, null)
+
+		if(TSGUARD) Row("# unreachable")
+
+		// O(depth) would put depth 8 near 8x depth 1; flat-within-noise is
+		// about 1x with a spread ceiling near 25%. 3x separates the two
+		// decisively without a noise-anchored tolerance. The 0.02 floor stops
+		// a BELOW_BASELINE zero in the anchor from failing the row spuriously.
+		Assert("dispatch.istype_flat", "dispatch",
+			"istype cost is flat across depth and relatedness",
+			(it_d8 < max(it_d1, 0.02) * 3 && it_anc < max(it_d1, 0.02) * 3 && it_miss < max(it_d1, 0.02) * 3) ? 1 : 0, 1,
+			"d1 [round(it_d1,0.001)] d8 [round(it_d8,0.001)] ancestor [round(it_anc,0.001)] unrelated [round(it_miss,0.001)] us/op")
+
+		// Ordering, no tolerance, per the xcheck lesson: an instrument that has
+		// gone wrong misranks these; one that is merely noisy does not.
+		Assert("dispatch.typesof_control_scales", "dispatch",
+			"typesof on a 9-subtype mob type outranks a 1-subtype one",
+			(ts_d1 > ts_d8) ? 1 : 0, 1,
+			"d1 [round(ts_d1,0.001)] us/op vs d8 [round(ts_d8,0.001)] us/op")
 
 		inner.loc = null
 
