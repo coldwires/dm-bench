@@ -1,0 +1,146 @@
+# suite	byond-canonical
+# byond_version	516
+# byond_build	1666
+# system	windows
+# runner_priority	Normal
+# merged_runs	3
+# merged_from	n1\results-516.1666-windows.tsv n2\results-516.1666-windows.tsv n3\results-516.1666-windows.tsv
+kind	id	category	name	value	unit	expected	status	res	notes
+MEASURE	framework.empty_loop	framework	empty loop iteration	0.07	us				n=3 min=0.06 max=0.07 spread=14%
+MEASURE	framework.bare_loop	framework	loop iteration, no accumulator	0.02	us				WIDE_SPREAD; n=3 min=0.02 max=0.03 spread=50%
+ASSERT	framework.discarded_work_still_costs	framework	an expression whose result is unused is still executed	1		1	PASS		n=3 PASS/PASS/PASS; bare loop 1 ds, discarded istype 4 ds over 4000000
+ASSERT	lifetime.refcount_collects	lifetime	unreferenced object is collected	0		0	PASS		n=3 PASS/PASS/PASS; created 1, dropped the only ref
+ASSERT	lifetime.cycle_not_collected	lifetime	loc/contents cycle is never collected	0		0	PASS		n=3 PASS/PASS/PASS; 500 host+child pairs, all refs dropped, none freed
+ASSERT	lifetime.cycle_broken_collects	lifetime	clearing contents first allows collection	1		1	PASS		n=3 PASS/PASS/PASS; 500 pairs, freed 499; the last iteration's local may still be scoped
+ASSERT	lifetime.del_src_aborts_proc	lifetime	del(src) aborts the calling proc	0		0	PASS		n=3 PASS/PASS/PASS; the line after del(src) must not execute
+ASSERT	lifetime.del_nulls_caller_ref	lifetime	del(src) nulls the caller's local	NULL		NULL	PASS		n=3 PASS/PASS/PASS
+ASSERT	lifetime.src_never_null_in_proc	lifetime	if(!src) never passes inside a live proc	1		1	PASS		n=3 PASS/PASS/PASS; guarded del must not fire; proc runs to completion
+ASSERT	lifetime.spawn_pins_object	lifetime	object survives while a spawn is pending	1		1	PASS		n=3 PASS/PASS/PASS; only ref dropped, spawn still queued
+ASSERT	lifetime.spawn_sees_live_src	lifetime	pending spawn wakes with src alive	ALIVE		ALIVE	PASS		n=3 PASS/PASS/PASS
+ASSERT	lifetime.collected_after_spawn	lifetime	object is collected once the spawn resolves	0		0	PASS		n=3 PASS/PASS/PASS; collected 0 ticks after the spawn fired
+ASSERT	numeric.eq_at_2p24	numeric	16777216 == 16777217	1		1	PASS		n=3 PASS/PASS/PASS; 16777217 is not representable and rounds down
+ASSERT	numeric.increment_stalls	numeric	n+1 == n first holds at 2^24	16777216		16777216	PASS		n=3 PASS/PASS/PASS
+ASSERT	numeric.loop_nonterminating	numeric	for-loop past 2^24 does not terminate	1		1	PASS		n=3 PASS/PASS/PASS; bailed via guard at i=16777216
+ASSERT	numeric.loop_control_terminates	numeric	same loop below 2^24 terminates normally	21		21	PASS		n=3 PASS/PASS/PASS; control for the above
+ASSERT	numeric.accumulator_saturates	numeric	accumulator saturates at 2^24	16777216		16777216	PASS		n=3 PASS/PASS/PASS; expected 18000000, lost 1222784, no error raised
+ASSERT	numeric.shift_23_ok	numeric	1 << 23	8388608		8388608	PASS		n=3 PASS/PASS/PASS; highest usable bit
+ASSERT	numeric.shift_24_zero	numeric	1 << 24	0		0	PASS		n=3 PASS/PASS/PASS; mask becomes zero, not a large number
+ASSERT	numeric.shift_30_zero	numeric	1 << 30	0		0	PASS		n=3 PASS/PASS/PASS
+ASSERT	numeric.shift_32_wraps	numeric	1 << 32	1		1	PASS		n=3 PASS/PASS/PASS; shift count wraps
+ASSERT	numeric.bitfield_23_survives	numeric	flag at bit 23 round-trips	1		1	PASS		n=3 PASS/PASS/PASS
+ASSERT	numeric.bitfield_24_lost	numeric	flag at bit 24 is silently lost	0		0	PASS		n=3 PASS/PASS/PASS; zero mask: setting stores nothing, testing reads false
+ASSERT	scheduler.world_tick_is_hook	scheduler	world/Tick() fires once per tick	1		1	PASS		n=3 PASS/PASS/PASS; fired 10 times over ~10 ticks
+ASSERT	scheduler.wake_before_world_tick	scheduler	waking procs run before world.Tick()	1		1	PASS		n=3 PASS/PASS/PASS; wake seq 1, Tick seq 2
+ASSERT	scheduler.spawn0_same_tick	scheduler	spawn(0) runs in the same tick	1		1	PASS		n=3 PASS/PASS/PASS; before 39, inside 39
+ASSERT	scheduler.spawn_context_is_copy	scheduler	spawned block cannot write to the caller's locals	-1		-1	PASS		n=3 PASS/PASS/PASS; 99 would mean the context is shared, not copied
+MEASURE	scheduler.parked_0	scheduler	100 ticks with 0 parked procs	50000	us				n=3 min=50000 max=50000 spread=0%
+MEASURE	scheduler.parked_10000	scheduler	100 ticks with 10000 parked procs	50000	us				n=3 min=50000 max=50000 spread=0%
+MEASURE	scheduler.parked_100000	scheduler	100 ticks with 100000 parked procs	50000	us				n=3 min=50000 max=50000 spread=0%
+MEASURE	scheduler.waking_1000	scheduler	100 ticks with 1000 procs waking each tick	50000	us				n=3 min=50000 max=50000 spread=0%
+MEASURE	scheduler.waking_5000	scheduler	100 ticks with 5000 procs waking each tick	50000	us				n=3 min=50000 max=50000 spread=0%
+ASSERT	view.filter_equivalence	view	cached-then-filtered and inline-typed return identical counts	1		1	PASS		n=3 PASS/PASS/PASS; 41 vs 41 mobs; without this the timing comparison is void
+MEASURE	view.build_only	view	var/list/V = view(7,c)	225	us				n=3 min=212.5 max=237.5 spread=11%
+MEASURE	view.build_then_filter	view	cache list, then for(mob in V)	287.5	us				n=3 min=262.5 max=300 spread=13%
+MEASURE	view.inline_typed	view	for(mob in view(7,c))	27.3	us				n=3 min=23.6 max=28.2 spread=17%
+MEASURE	view.inline_untyped	view	for(atom in view(7,c))	366.7	us				WIDE_SPREAD; n=3 min=333.3 max=450 spread=32%
+ASSERT	view.twopass_equivalence	view	cached and re-queried two-pass return identical counts	1		1	PASS		n=3 PASS/PASS/PASS; 441 vs 441
+MEASURE	view.twopass_cached	view	cache list, two typed loops	383.3	us				n=3 min=316.7 max=400 spread=22%
+MEASURE	view.twopass_requery	view	call view() twice inline	178.6	us				WIDE_SPREAD; n=3 min=157.1 max=221.4 spread=36%
+MEASURE	view.family_view	view	for(mob in view(7,c))	53.3	us				WIDE_SPREAD; n=3 min=46.7 max=61.7 spread=28%
+MEASURE	view.family_oview	view	for(mob in oview(7,c))	26.4	us				WIDE_SPREAD; n=3 min=21.8 max=31.8 spread=38%
+MEASURE	view.family_viewers	view	for(mob in viewers(7,c))	24.2	us				n=3 min=20 max=25.8 spread=24%
+MEASURE	view.family_range	view	for(mob in range(7,c))	10.4	us				n=3 min=8.52 max=11.1 spread=25%
+MEASURE	view.radius_1	view	for(mob in view(1,c))	1.75	us				n=3 min=1.5 max=1.81 spread=18%
+MEASURE	view.radius_3	view	for(mob in view(3,c))	6.76	us				WIDE_SPREAD; n=3 min=5.88 max=7.94 spread=30%
+MEASURE	view.radius_5	view	for(mob in view(5,c))	17.5	us				n=3 min=15.6 max=18.1 spread=14%
+MEASURE	view.radius_7	view	for(mob in view(7,c))	50	us				WIDE_SPREAD; n=3 min=40 max=53.3 spread=27%
+MEASURE	view.radius_10	view	for(mob in view(10,c))	40	us				n=3 min=38.6 max=40 spread=3%
+MEASURE	view.clutter_0_raw	view	view(7) build with 0 extra objs	250	us				n=3 min=210 max=270 spread=24%
+MEASURE	view.clutter_0_typed	view	typed loop with 0 extra objs	25.5	us				n=3 min=23.6 max=27.3 spread=15%
+ASSERT	view.typed_loop_skips_build	view	typed loop grows far less than raw view() as clutter rises	1		1	PASS		n=3 PASS/PASS/PASS; raw x6.7, typed x1.6 at 1867.1 atoms, 45.1 mobs
+MEASURE	view.clutter_1200_raw	view	view(7) build with 1200 extra objs	1770	us				n=3 min=1560 max=1810 spread=14%
+MEASURE	view.clutter_1200_typed	view	typed loop with 1200 extra objs	38.2	us				n=3 min=30.9 max=40 spread=24%
+ASSERT	view.los_cost_is_unconditional	view	view() cost does not rise with opaque atom count	1		1	PASS		n=3 PASS/PASS/PASS; 45 us clear vs 42 us with 200 opaque
+ASSERT	view.occlusion_works	view	opaque atoms actually occlude	1		1	PASS		n=3 PASS/PASS/PASS; 41 mobs visible, 15 with 200 opaque
+MEASURE	lists.in_n10	lists	needle in L, n=10, worst case	0.1	us				BASELINE_HEAVY; n=3 min=0.09 max=0.1 spread=10%
+MEASURE	lists.assoc_n10	lists	A[needle], n=10	0.11	us				BASELINE_HEAVY; WIDE_SPREAD; n=3 min=0.09 max=0.12 spread=27%
+MEASURE	lists.in_n100	lists	needle in L, n=100, worst case	0.33	us				n=3 min=0.29 max=0.33 spread=12%
+MEASURE	lists.assoc_n100	lists	A[needle], n=100	0.13	us				BASELINE_HEAVY; n=3 min=0.11 max=0.14 spread=23%
+MEASURE	lists.in_n1000	lists	needle in L, n=1000, worst case	2.43	us				n=3 min=2.14 max=2.43 spread=12%
+MEASURE	lists.assoc_n1000	lists	A[needle], n=1000	0.12	us				BASELINE_HEAVY; WIDE_SPREAD; n=3 min=0.11 max=0.15 spread=33%
+MEASURE	lists.in_n5000	lists	needle in L, n=5000, worst case	11.9	us				n=3 min=10.4 max=12.1 spread=14%
+MEASURE	lists.assoc_n5000	lists	A[needle], n=5000	0.16	us				BASELINE_HEAVY; n=3 min=0.14 max=0.18 spread=25%
+MEASURE	lists.build_plus	lists	L = list(); L += j  x100	12	us				n=3 min=11.3 max=13.3 spread=17%
+MEASURE	lists.build_add	lists	L = list(); L.Add(j)  x100	17.3	us				n=3 min=15.3 max=18.7 spread=20%
+MEASURE	lists.build_prealloc	lists	L = new(100); indexed assign x100	14.7	us				WIDE_SPREAD; n=3 min=12.7 max=16.7 spread=27%
+MEASURE	lists.copy_100	lists	L.Copy(), 100 elements	1.87	us				WIDE_SPREAD; n=3 min=1.6 max=2.27 spread=36%
+MEASURE	dispatch.istype	dispatch	istype(O, /obj/thing)	0.09	us				n=3 min=0.08 max=0.1 spread=22%
+MEASURE	dispatch.type_eq	dispatch	O.type == /obj/thing	0.09	us				n=3 min=0.07 max=0.09 spread=22%
+MEASURE	dispatch.bitfield	dispatch	O.flags & FLAG_A	0.07	us				n=3 min=0.07 max=0.07 spread=0%
+MEASURE	dispatch.assoc_category	dispatch	O.cats assoc lookup	0.1	us				n=3 min=0.1 max=0.12 spread=20%
+MEASURE	dispatch.locate_in_contents	dispatch	locate(type) in O, 1 item	0.13	us				n=3 min=0.12 max=0.14 spread=15%
+MEASURE	calls.global_proc	calls	GlobalProc(), empty	0.1	us				BASELINE_HEAVY; WIDE_SPREAD; n=3 min=0.08 max=0.11 spread=30%
+MEASURE	calls.datum_method	calls	D.Method(), empty	0.15	us				BASELINE_HEAVY; WIDE_SPREAD; n=3 min=0.13 max=0.19 spread=40%
+MEASURE	calls.datum_method_dot	calls	D.Method(), sets . = 1	0.17	us				BASELINE_HEAVY; WIDE_SPREAD; n=3 min=0.15 max=0.2 spread=29%
+MEASURE	vars.local	calls	acc += local_var	0.01	us				BASELINE_HEAVY; WIDE_SPREAD; n=3 min=0 max=0.02 spread=200%
+MEASURE	vars.global	calls	acc += global_var	0	us				BASELINE_HEAVY; n=3 min=0 max=0.03 spread=0%
+MEASURE	vars.world_time	calls	acc += world.time	0.03	us				BASELINE_HEAVY; WIDE_SPREAD; n=3 min=0.03 max=0.04 spread=33%
+MEASURE	vars.datum	calls	acc += D.x	0.08	us				BASELINE_HEAVY; WIDE_SPREAD; n=3 min=0.08 max=0.1 spread=25%
+MEASURE	strings.embed	strings	s = embedded expression	0.33	us				WIDE_SPREAD; n=3 min=0.27 max=0.38 spread=33%
+MEASURE	strings.concat	strings	s = a + b	0.29	us				n=3 min=0.27 max=0.32 spread=17%
+MEASURE	strings.num2text	strings	num2text(i)	0.93	us				n=3 min=0.84 max=0.93 spread=10%
+MEASURE	strings.findtext	strings	findtext, 43-char haystack	1.93	us				n=3 min=1.73 max=2.14 spread=21%
+MEASURE	alloc.datum	alloc	new /datum	0.19	us				BASELINE_HEAVY; n=3 min=0.17 max=0.2 spread=16%
+MEASURE	alloc.datum_holder	alloc	new /datum/pc_holder	0.2	us				BASELINE_HEAVY; WIDE_SPREAD; n=3 min=0.17 max=0.24 spread=35%
+MEASURE	alloc.obj	alloc	new /obj	0.46	us				n=3 min=0.43 max=0.48 spread=11%
+MEASURE	alloc.mob	alloc	new /mob	0.55	us				n=3 min=0.45 max=0.56 spread=20%
+MEASURE	movement.loc_assign	movement	M.loc = T	0.24	us				n=3 min=0.23 max=0.27 spread=17%
+MEASURE	movement.move_proc	movement	M.Move(T)	2.43	us				n=3 min=2.33 max=2.59 spread=11%
+MEASURE	movement.move_proc_overridden	movement	M.Move(T) with 4 overridden callbacks	3.78	us				n=3 min=3.68 max=4.09 spread=11%
+ASSERT	movement.move_fires_callbacks	movement	Move() fires Enter, Exit, Entered and Exited	1		1	PASS		n=3 PASS/PASS/PASS; Enter=1000 Exit=1000 Entered=1000 Exited=1000 over 1000 moves
+ASSERT	movement.loc_assign_skips_callbacks	movement	assigning loc fires none of them	0		0	PASS		n=3 PASS/PASS/PASS
+ASSERT	io.file_write_does_not_yield	io	file write does not yield to the scheduler	1		1	PASS		n=3 PASS/PASS/PASS; world.time 395 before, 395 after 4000 writes
+ASSERT	io.world_log_does_not_yield	io	world.log write does not yield to the scheduler	1		1	PASS		n=3 PASS/PASS/PASS; world.time 395 before, 395 after 4000 writes
+MEASURE	io.file_write_short	io	file << 10-char line	212.4	us				WIDE_SPREAD; n=3 min=187.4 max=274.9 spread=41%
+MEASURE	io.file_write_long	io	file << 1000-char line	312.4	us				n=3 min=287.4 max=324.9 spread=12%
+ASSERT	io.write_cost_is_per_call_not_per_byte	io	write cost is dominated by the call, not the payload	0		1	UNSTABLE		n=3 FAIL/PASS/FAIL; 212 us at 10 chars, 324 us at 1000 chars, 100x the data
+MEASURE	io.world_log_short	io	world.log << 10-char line	4.93	us				WIDE_SPREAD; n=3 min=3.68 max=6.19 spread=51%
+ASSERT	io.world_log_far_cheaper_than_file	io	world.log is dramatically cheaper than a direct file write	1		1	PASS		n=3 PASS/PASS/PASS; world.log 4 us vs file 212 us
+MEASURE	io.file_write_interpolated	io	file << line with one embedded value	249.9	us				WIDE_SPREAD; n=3 min=249.9 max=362.4 spread=45%
+ASSERT	io.logging_does_not_perturb	io	a burst of writes does not shift a following measurement	1		1	PASS		n=3 PASS/PASS/PASS; control 0.12 us, own drift 0.01, after 500 file writes 0.11, after 500 world.log 0.11
+MEASURE	calls.user_0args	calls	user proc, 0 args	0.09	us				BASELINE_HEAVY; WIDE_SPREAD; n=3 min=0.08 max=0.12 spread=44%
+MEASURE	calls.user_1arg	calls	user proc, 1 arg	0.11	us				BASELINE_HEAVY; WIDE_SPREAD; n=3 min=0.1 max=0.14 spread=36%
+MEASURE	calls.user_4args	calls	user proc, 4 args	0.15	us				BASELINE_HEAVY; WIDE_SPREAD; n=3 min=0.15 max=0.2 spread=33%
+MEASURE	calls.user_8args	calls	user proc, 8 args	0.21	us				BASELINE_HEAVY; WIDE_SPREAD; n=3 min=0.19 max=0.25 spread=29%
+ASSERT	calls.args_are_copied	calls	call cost rises with argument count	1		1	PASS		n=3 PASS/PASS/PASS; 0 args 0.095 us, 8 args 0.208 us
+MEASURE	calls.builtin_abs	calls	abs(x), hard builtin	0	us				LOW_RESOLUTION; n=3 min=0 max=0.01 spread=0%
+MEASURE	calls.builtin_max	calls	max(a,b), hard builtin	0.03	us				BASELINE_HEAVY; LOW_RESOLUTION; WIDE_SPREAD; n=3 min=0.02 max=0.04 spread=67%
+ASSERT	calls.hard_builtin_cheaper_than_user	calls	a hard-called builtin costs less than a user-defined proc	1		1	PASS		n=3 PASS/PASS/PASS; abs() 0 us vs 1-arg user proc 0.101 us
+MEASURE	calls.builtin_vector_dot	calls	vector.Dot(), soft-called builtin	0.09	us				BASELINE_HEAVY; WIDE_SPREAD; n=3 min=0.08 max=0.14 spread=67%
+ASSERT	calls.soft_builtin_above_hard	calls	a soft-called builtin costs more than a hard-called one	1		1	PASS		n=3 PASS/PASS/PASS; Dot() 0.095 us vs abs() 0 us, user proc 0.101 us
+MEASURE	calls.hard_vs_user_ratio	calls	user proc cost divided by hard builtin cost	29.6	x				WIDE_SPREAD; n=3 min=14.33 max=101.33 spread=294%
+MEASURE	profiler.call_cost_off	profiler	user proc call, profiler off	0.21	us				n=3 min=0.19 max=0.21 spread=10%
+MEASURE	profiler.call_cost_on	profiler	user proc call, profiler on	0.68	us				n=3 min=0.66 max=0.71 spread=7%
+MEASURE	profiler.call_cost_after	profiler	user proc call, profiler stopped again	0.18	us				n=3 min=0.18 max=0.2 spread=11%
+MEASURE	profiler.overhead_multiple	profiler	profiled cost divided by unprofiled	3.38	x				n=3 min=3.24 max=3.47 spread=7%
+ASSERT	profiler.perturbs_measurements	profiler	enabling the profiler measurably changes call cost	1		1	PASS		n=3 PASS/PASS/PASS; off 0.19 us, on 0.66 us, off again 0.2 us
+ASSERT	profiler.overhead_is_reversible	profiler	stopping the profiler restores the original cost	1		1	PASS		n=3 PASS/PASS/PASS; 0.19 us before, 0.2 us after stopping
+ASSERT	profiler.returns_data	profiler	Profile() returns a populated list	1		1	PASS		n=3 PASS/PASS/PASS; 12 entries
+MEASURE	profiler.columns	profiler	column names	name/self/total/real/over/calls	names				n=3
+MEASURE	xcheck.timer_cheap	xcheck	XV_Cheap, an empty proc	0.16	us				n=3 min=0.16 max=0.18 spread=12%
+MEASURE	xcheck.timer_medium	xcheck	XV_Medium by this framework	0.19	us				n=3 min=0.19 max=0.2 spread=5%
+MEASURE	xcheck.timer_heavy	xcheck	XV_Heavy by this framework	1.15	us				n=3 min=1.05 max=1.2 spread=13%
+MEASURE	xcheck.profiler_cheap	xcheck	XV_Cheap self time	1.2	s-total				n=3 min=1.17 max=1.34 spread=14%
+MEASURE	xcheck.profiler_medium	xcheck	XV_Medium self time	1.47	s-total				n=3 min=1.44 max=1.71 spread=18%
+MEASURE	xcheck.profiler_heavy	xcheck	XV_Heavy self time	2.22	s-total				n=3 min=2.22 max=2.41 spread=9%
+ASSERT	xcheck.profiler_found_our_procs	xcheck	world.Profile reported the procs we called	1		1	PASS		n=3 PASS/PASS/PASS; cheap=1.169 medium=1.442 heavy=2.219
+ASSERT	xcheck.instruments_agree_on_order	xcheck	both instruments rank the three procs the same way	1		1	PASS		n=3 PASS/PASS/PASS; timer 0.16/0.189/1.2 us, profiler per call 0/0/1e-06
+MEASURE	xcheck.ratio_timer	xcheck	heavy/medium work by this framework	36	x				WIDE_SPREAD; n=3 min=22.25 max=109.13 spread=241%
+MEASURE	xcheck.ratio_profiler	xcheck	heavy/medium work by world.Profile	22.8	x				n=3 min=19.24 max=22.91 spread=16%
+
+# passed	44
+# failed	0
+# unstable	1
+# measured	86
+# wide_spread	30
+# result	FAIL
