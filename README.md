@@ -146,17 +146,40 @@ framework.
 figures were re-derived after the original timing method proved too coarse to
 distinguish them, and are stable.
 
-`suite.dme` passes 44 of 44 on two runs of 516.1666 and 43 of 44 on a third. One
-assertion is unstable, and 26 of its 77 measured rows vary by more than 25%
-between runs on the same build. The cause is understood: sub-microsecond rows
-subtract an empty-loop baseline comparable in size to the operation itself, and
-that baseline is calibrated once per run. A fix is in progress.
+`suite.dme`, three runs merged: 46 assertions, 86 measurements, 45 passed, 0
+failed, 1 unstable. 12 of 86 rows vary by more than 25% between runs on the same
+build, down from 26 of 77 earlier. The one unstable assertion has since been
+removed as unsound and the merge predates that change.
 
-**Do not quote a sub-microsecond figure from `suite.dme` to two decimal places.**
-Ratios at the 10x scale the suite was built for are sound.
+### Precision
 
-Parts of `BYOND-PERF-SPEC.md` predate the current framework and come from
-harnesses not in this repository. Those sections are marked in place.
+**Absolute figures carry an error bar of at least 15%.** That is measured, not
+estimated. Spread by measurement size, three runs on one build:
+
+| value band | rows | median spread |
+|---|---|---|
+| under 0.2 us | 25 | 21% |
+| 0.2 to 1 us | 15 | 13% |
+| 1 to 10 us | 15 | 14% |
+| over 10 us | 29 | 15% |
+
+If timing resolution were the limit, small measurements would be far worse than
+large ones. Rows over 10 us run for seconds, have negligible quantization and
+subtract no baseline, and still scatter 15%. That floor is machine variance:
+scheduling, thermal behaviour, cache state. It survived sleeps between
+measurements, order rotation, a discarded warm-up round and eight samples.
+
+The clock is not the limit. `world.tick_usage` measures linear to within 2.4%
+across a 500x range of workload.
+
+**So do not read a sub-microsecond figure to two decimal places.** 0.09 and 0.11
+do not differ at this precision. Ratios between rows measured close together are
+sounder than absolutes, because the two share machine conditions and drift
+partly cancels.
+
+Parts of `BYOND-PERF-SPEC.md` predate the current framework, come from harnesses
+not in this repository, and still print more precision than the data supports.
+Those sections are marked in place.
 
 ## Client testing needs two machines
 
