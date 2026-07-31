@@ -91,6 +91,21 @@ Column 9 is the resolution figure behind the row, deciseconds or percent of a
 tick depending on the clock. It is excluded from diffs as timing noise and kept
 so an under-resolved row stays auditable.
 
+Building a baseline from several runs:
+
+```powershell
+.\merge-runs.ps1 -Runs build\run1,build\run2,build\run3 -Out results\516.1666-windows-merged.tsv
+```
+
+A baseline from a single run cannot show whether the suite is stable, so the
+baseline is a merge. MEASURE rows become the median across runs, with the
+observed min, max and spread recorded per row, and rows varying more than 25%
+are marked `WIDE_SPREAD`. ASSERT rows become PASS only if every run passed and
+`UNSTABLE` if the runs disagree, because an unstable assertion is a defect in
+the suite rather than a property of the engine, and averaging a verdict would
+hide the thing worth finding. The merge refuses runs from different builds, and
+refuses a run that ended early. It exits non-zero if anything is unstable.
+
 `check-docs.ps1` verifies that counts quoted in the documentation match the
 baselines, that cross-references resolve, and that every file path named in a
 document exists. It exits non-zero on failure.
@@ -99,6 +114,7 @@ document exists. It exits non-zero on failure.
 
 ```
 run.ps1              build discovery and runner
+merge-runs.ps1       merge N runs into one baseline, median and spread
 check-docs.ps1       documentation consistency check
 suite.dme            manifest, non-contaminating tests
 suite_del.dme        del() tests, separate process by necessity
