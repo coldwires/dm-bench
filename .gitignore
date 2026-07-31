@@ -19,6 +19,7 @@ build/
 /results-*.tsv
 /results.tsv
 /results_del.tsv
+/*-out.txt
 
 # Screen captures
 *.mp4
