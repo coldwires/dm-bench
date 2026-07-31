@@ -5,6 +5,7 @@ Measured cost of common BYOND operations.
 ## Test conditions
 
 - DreamDaemon 516.1666, Windows 11. Single machine, machine drift possible. Ratios hold.
+- Baselines dated 2026-07-31 or later run DreamDaemon at High process priority; earlier figures were normal priority.
 - Sections 1 to 11 and 13 to 14: single machine, no clients connected.
 - Section 12: server on a remote Linux box, clients on a separate machine over the public internet.
 - Sections other than 2 ran at least 1.5s against `world.timeofday` (0.1s resolution). Quantization error under 7% **for a single timed block**. That guard does not cover a difference between two blocks, which is what section 2 is made of; see the note there.
@@ -13,7 +14,22 @@ Measured cost of common BYOND operations.
 - Where two snippets are claimed equivalent, the harness asserts matching output counts and prints the result.
 - Harnesses: `suite.dme` and `suite_del.dme`. **Not every figure on this page regenerates from them.** Five harnesses are cited across the page and none is in the tree: `spec_sheet.dme`, `hypotheses.dme`, `delscale2.dme`, `delcause.dme`, `respawn.dme`. Sections carrying imported figures are flagged in place.
 
-**Repeatability.** Three full runs plus targeted re-tests. Most figures held within 15% and every ratio was stable across all three. Ranges are given where spread is wide enough to matter. **Section 2 is the exception and is the reason this caveat exists**: three of its seven assertions flipped at random across four runs of a single build, because each figure was a difference between two `world.timeofday` blocks and the difference was only one to four clock quanta wide. The section was re-derived with `world.tick_usage` and median-of-three.
+**Repeatability and precision.** Every baseline is three runs merged, median
+and spread per row. **Absolute figures carry an error bar of at least 15%,
+measured rather than estimated**: rows over 10 µs, where quantization is
+negligible and no baseline is subtracted, still scatter about 15% between
+runs, and the number of rows varying over 25% tracked ambient machine load
+from 11 to 30 of 86 across triples taken the same day. A sub-microsecond
+figure printed to two decimals is formatting, not precision; 0.09 and 0.11 do
+not differ at this scale. Ratios between rows measured close together are
+sounder than absolutes, because the arms share machine conditions. Since
+2026-07-31 baselines run DreamDaemon at High process priority, which halves
+the between-run spread of long rows (18.3% to 9.9% median); spread figures
+are not comparable across priorities. **Section 2 carries its own history**:
+three of its seven assertions once flipped at random across four runs,
+because each figure was a difference between two `world.timeofday` blocks
+one to four clock quanta wide. It was re-derived with `world.tick_usage` and
+median-of-three.
 
 **Controls.** Mechanism claims on this page are tested rather than asserted, in `hypotheses.dme`, **which is not in the tree**. The `del()` figures were re-derived in isolated harnesses after the main run proved to contaminate itself; see §2.
 
@@ -338,36 +354,52 @@ findtext(hay, "lazy")            // 43-char haystack       // 2.04 µs
 
 ## 8. Allocation
 
-Baseline removed.
+Baseline removed. Three High-priority runs merged, 2026-07-31.
 
 ```dm
-new /datum                                                 // 0.22 µs
+new /datum                                                 // 0.20 µs
 new /datum/holder                // 1 var, 2 procs         // 0.22 µs
-new /obj                                                   // 0.52 µs
-new /mob                                                   // 0.54 µs
+new /obj                                                   // 0.46 µs
+new /mob                                                   // 0.53 µs
 ```
 
-A blank `/mob` costs the same as a blank `/obj`. Var count drives allocation cost, not type. A mob with 30 vars and 3 lists measured 2.6 µs.
+An earlier version claimed a blank `/mob` costs the same as a blank `/obj` and
+that var count, not type, drives allocation cost. The data supports neither.
+The mob reads 10 to 22% above the obj across merges, same direction in every
+run. The large step is datum to obj, 0.20 to 0.46, which is a type
+distinction with no vars added; one var on a datum adds nothing measurable.
+The two datum rows are BASELINE_HEAVY, meaning a quarter or more of the raw
+reading is the subtracted empty-loop term.
+
+A mob with 30 vars and 3 lists measured 2.6 µs by the unported respawn
+harness; indicative only, per the harness note at the top of this page.
 
 ---
 
 ## 9. Movement
 
-Baseline removed.
+Baseline removed. Three High-priority runs merged, 2026-07-31.
 
 ```dm
-M.loc = T                        // direct                 // 0.29 µs
+M.loc = T                        // direct                 // 0.24 to 0.33 µs
 M.Move(T)                        // Enter/Exit chain       // 2.54 µs
+M.Move(T)                        // all 4 callbacks overridden // 3.94 µs
 ```
 
-Ratio 8.8x. Callback counts verified by overriding all four on a turf type:
+`loc` assignment is the one wide row here, so its ratio to `Move()` is 8 to
+11x rather than a point value. Overriding the callbacks, which is what real
+codebases do, costs 55% over the plain path.
+
+Callback counts verified by overriding all four on a turf type:
 
 | 1,000 iterations | Enter | Exit | Entered | Exited |
 |---|---|---|---|---|
-| `M.Move(T)` | 999 | 999 | 999 | 999 |
+| `M.Move(T)` | 1000 | 1000 | 1000 | 1000 |
 | `M.loc = T` | 0 | 0 | 0 | 0 |
 
-999 rather than 1,000 because the first iteration targets the turf the mob already occupies. Assigning `loc` fires nothing.
+An earlier version of this table read 999 with a rationale about the first
+move targeting the occupied turf; the recorded count is 1000 in every run and
+the rationale did not survive checking. Assigning `loc` fires nothing.
 
 ---
 
@@ -649,7 +681,7 @@ Shifting past bit 23 produces a mask of **zero**, not a large number. A flag def
 | `range()` instead of `view()` when line of sight is not needed | 2.3 to 3x |
 | Push from the event instead of polling from observers | 9.2 to 9.6x |
 | `thing = null` instead of `del(thing)` | ~2,400x at 200k live objs (measured); 3,300x at 300k is unverified, see 2 |
-| `loc =` instead of `Move()` when callbacks are not needed | 8.8x |
+| `loc =` instead of `Move()` when callbacks are not needed | 8 to 11x |
 | Associative list above 20 entries | up to 70x |
 | `+=` instead of `.Add()` for list building | 1.4x |
 
