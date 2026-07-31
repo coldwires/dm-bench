@@ -153,15 +153,20 @@ framework.
 figures were re-derived after the original timing method proved too coarse to
 distinguish them, and are stable.
 
-`suite.dme`, three High-priority runs merged: 45 assertions, 86 measurements,
-45 passed, 0 failed, 0 unstable, 18 of 86 rows varying more than 25% across the
-triple. One assertion, the write-cost-per-call comparison, failed 2 of 9 runs
-taken the same day: its threshold sits inside the noise band of two single-shot
-quantized timings, and it is being reworked to use medians with headroom. A
-clean triple does not disprove instability. A normal-priority triple from the
-same day is kept alongside as `516.1666-windows-normal-priority.tsv`; the count
-of wide rows tracks ambient machine load and ranged 11 to 30 across same-day
-triples.
+`suite.dme`, three High-priority runs merged: 47 assertions, 92 measurements,
+47 passed, 0 failed, 0 unstable, 15 of 92 rows varying more than 25% across the
+triple. The write-cost-per-call comparison that failed 2 of 9 runs earlier the
+same day now takes median-of-three per arm against a 2x threshold and held; a
+clean triple does not disprove instability, but the fix changes the mechanism
+rather than betting on quiet runs. The istype scaling rows (depth, ancestor,
+unrelated miss, with a typesof ordering control) were added in the same batch.
+A normal-priority triple from the same day is kept alongside as
+`516.1666-windows-normal-priority.tsv`; the count of wide rows tracks ambient
+machine load and ranged 11 to 30 across same-day triples.
+
+516.1685 has the same three-run merged baseline
+(`results/516.1685-windows-merged.tsv`): 47 passed, 0 failed, 0 unstable, 10
+wide rows, and every assertion verdict identical to 516.1666.
 
 ### Precision
 
