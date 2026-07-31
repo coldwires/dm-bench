@@ -111,37 +111,51 @@ proc
 		var/obj/pc_thing/inner = new
 		inner.loc = W
 
-		var/R = 15000000
+		// 25M, not 15M. Dropping the accumulator made each block finish faster,
+		// and three of these rows fell under MIN_DS at the old count. The
+		// resolution guard caught it rather than the numbers quietly getting
+		// worse. Loop runs R/UNROLL = 2.5M times, well inside the 2^24 bound.
+		var/R = 25000000
 
-		CACC = 0
+		// Unrolled UNROLL times with the result discarded, and reported through
+		// MeasureU, which subtracts BASE_LOOP_US/UNROLL rather than BASE_US.
+		//
+		// The old form was `for(i = 1 to R) if(op) CACC++`, subtracting a
+		// baseline that included both the loop and an accumulator. On istype
+		// that baseline was 40.7% of the reading, so the published figure moved
+		// with baseline calibration as much as with the engine. Discarding the
+		// result and unrolling takes it to 3.4%. Neither lever alone is worth
+		// much: unrolling reaches 34%, discarding 26%.
+		//
+		// This depends on DM executing an expression whose value is unused.
+		// `framework.discarded_work_still_costs` asserts that it does, so a
+		// future build that optimises it away fails loudly instead of silently
+		// reporting every row as near zero.
+
 		var/t0 = world.timeofday
-		for(var/i = 1 to R)
-			if(istype(W, /obj/pc_thing)) CACC++
-		Measure("dispatch.istype", "dispatch", "istype(O, /obj/thing)", world.timeofday - t0, R, 1, null)
+		for(var/i = 1 to R / UNROLL)
+			X10(istype(W, /obj/pc_thing))
+		MeasureU("dispatch.istype", "dispatch", "istype(O, /obj/thing)", world.timeofday - t0, R, UNROLL, null)
 
-		CACC = 0
 		var/t1 = world.timeofday
-		for(var/i = 1 to R)
-			if(W.type == /obj/pc_thing) CACC++
-		Measure("dispatch.type_eq", "dispatch", "O.type == /obj/thing", world.timeofday - t1, R, 1, null)
+		for(var/i = 1 to R / UNROLL)
+			X10(W.type == /obj/pc_thing)
+		MeasureU("dispatch.type_eq", "dispatch", "O.type == /obj/thing", world.timeofday - t1, R, UNROLL, null)
 
-		CACC = 0
 		var/t2 = world.timeofday
-		for(var/i = 1 to R)
-			if(W.flags & FLAG_A) CACC++
-		Measure("dispatch.bitfield", "dispatch", "O.flags & FLAG_A", world.timeofday - t2, R, 1, null)
+		for(var/i = 1 to R / UNROLL)
+			X10(W.flags & FLAG_A)
+		MeasureU("dispatch.bitfield", "dispatch", "O.flags & FLAG_A", world.timeofday - t2, R, UNROLL, null)
 
-		CACC = 0
 		var/t3 = world.timeofday
-		for(var/i = 1 to R)
-			if(W.cats["weapon"]) CACC++
-		Measure("dispatch.assoc_category", "dispatch", "O.cats assoc lookup", world.timeofday - t3, R, 1, null)
+		for(var/i = 1 to R / UNROLL)
+			X10(W.cats["weapon"])
+		MeasureU("dispatch.assoc_category", "dispatch", "O.cats assoc lookup", world.timeofday - t3, R, UNROLL, null)
 
-		CACC = 0
 		var/t4 = world.timeofday
-		for(var/i = 1 to R)
-			if(locate(/obj/pc_thing) in W) CACC++
-		Measure("dispatch.locate_in_contents", "dispatch", "locate(type) in O, 1 item", world.timeofday - t4, R, 1, null)
+		for(var/i = 1 to R / UNROLL)
+			X10(locate(/obj/pc_thing) in W)
+		MeasureU("dispatch.locate_in_contents", "dispatch", "locate(type) in O, 1 item", world.timeofday - t4, R, UNROLL, null)
 
 		inner.loc = null
 
