@@ -1,0 +1,34 @@
+// del() suite. Separate process on purpose.
+//
+// Build:  DreamMaker suite_del.dme
+// Run:    DreamDaemon suite_del.dmb <port> -trusted -invisible
+// Output: results-<version>.<build>-<system>-del.tsv, named by the engine itself
+//
+// del() cost is set by live object count, and peak concurrent population leaves
+// a permanent residual. Any test that grows the population poisons every later
+// del() reading in the same process, so this cannot share a world with suite.dme.
+
+#include "src\framework.dm"
+#include "src\del_isolated.dm"
+
+world
+	fps = 20
+	maxx = 100
+	maxy = 100
+	maxz = 1
+	turf = /turf
+	loop_checks = 0
+	name = "byond-canonical-suite-del"
+
+	New()
+		..()
+		spawn(1)
+			SUITE_TAG = "del"
+			Header()
+			CalibrateClock()
+			CalibrateBaseline()
+			Suite_Del()
+			Summary()
+			world.log << "del suite complete: [PASSED] passed, [FAILED] failed"
+			sleep(5)
+			del(src)

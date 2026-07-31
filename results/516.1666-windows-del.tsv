@@ -1,0 +1,30 @@
+# suite	byond-canonical
+# byond_version	516
+# byond_build	1666
+# system	windows
+# tick_lag	0.5
+# min_ds	15
+kind	id	category	name	value	unit	expected	status	dt_ds	notes
+MEASURE	framework.empty_loop	framework	empty loop iteration	0.06	us			28	baseline, subtracted from sub-microsecond rows
+# baseline_us	0.06
+ASSERT	del.zero_refs_is_free	del	del() is free when only a local points at the victim	1		1	PASS		-1.67 us
+ASSERT	del.one_ref_costs	del	a single heap reference makes del() cost real time	1		1	PASS		8.33 us
+ASSERT	del.refcount_does_not_scale	del	256 references cost no more than 1	1		1	PASS		1 ref 8.33 us, 256 refs 10 us
+MEASURE	del.refs_0	del	del cost, 0 heap refs	-1.67	us				
+MEASURE	del.refs_1	del	del cost, 1 heap ref	8.33	us				
+MEASURE	del.refs_256	del	del cost, 256 heap refs	10	us				
+ASSERT	del.turfs_not_counted	del	map size does not affect del() cost	1		1	PASS		12.5 us at 10k turfs, 12.5 us at 48k turfs
+ASSERT	del.cumulative_alloc_irrelevant	del	allocating and freeing 500k objects does not change del() cost	1		1	PASS		10 us before, 12.5 us after
+MEASURE	del.live_0	del	del cost at 0 live objs	12.5	us				
+MEASURE	del.live_50000	del	del cost at 50000 live objs	83.33	us				
+MEASURE	del.live_100000	del	del cost at 100000 live objs	250	us				
+MEASURE	del.live_200000	del	del cost at 200000 live objs	2333.33	us				
+ASSERT	del.live_count_drives_cost	del	del() cost rises sharply with live object count	1		1	PASS		12.5 us cold vs 2333.33 us at 200k live
+ASSERT	del.peak_leaves_residual	del	freeing the population does not restore the cold cost	1		1	PASS		12.5 us cold, 165 us after 200k existed and were freed
+MEASURE	del.residual_after_peak	del	del cost after peak population freed	165	us				
+
+# passed	7
+# failed	0
+# measured	9
+# low_resolution	0
+# result	PASS

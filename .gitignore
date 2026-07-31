@@ -1,0 +1,32 @@
+# DreamMaker build output
+*.dmb
+*.rsc
+*.dyn.rsc
+*.int
+*.lk
+*.backup
+
+# BYOND distributions. Each is ~23 MB of Byond Software's binaries and is not
+# ours to redistribute. Fetch the builds you need and drop them in as
+# byond-standalones/<version>/bin/. run.ps1 discovers them.
+byond-standalones/
+
+# Per-build scratch working directories created by run.ps1
+build/
+
+# Transient run output. The suite writes results-<version>-<system>.tsv beside
+# the .dmb; only curated copies under results/ are kept.
+/results-*.tsv
+/results.tsv
+/results_del.tsv
+
+# Screen captures
+*.mp4
+
+# Editor and OS noise
+.vscode/
+.idea/
+Thumbs.db
+desktop.ini
+*.swp
+*~

@@ -1,0 +1,103 @@
+// Maptick cost with real connected clients.
+//
+// Measured server-side. Two candidate instruments:
+//   1. world.map_cpu if it exists in 516
+//   2. world.tick_usage sampled as the first thing in a tick
+//
+// Control for CPU contention: clients can be parked in a DENSE scene or an EMPTY
+// one. The difference isolates map-send cost from the cost of N dreamseeker
+// processes competing for the same CPU.
+
+var/global/logf
+var/global/mode = "dense"
+var/global/list/samples = list()
+
+proc/L(msg)
+	if(!logf) logf = file("reftest/maptick.txt")
+	logf << msg
+
+turf/floor
+	icon_state = "f"
+obj/scenery
+mob/player
+
+world
+	fps = 20
+	maxx = 100
+	maxy = 100
+	maxz = 1
+	turf = /turf/floor
+	mob = /mob/player
+	name = "maptick probe"
+
+	New()
+		..()
+		// dense zone around (50,50): 3000 objs packed into a 21x21
+		for(var/i = 1 to 3000)
+			var/obj/scenery/o = new
+			o.loc = locate(50 + rand(-10,10), 50 + rand(-10,10), 1)
+		L("server up. dense zone = 3000 objs in 21x21 around (50,50)")
+		L("empty zone = (90,90)")
+		L("instruments available:")
+		L("  world.cpu      : [("cpu" in world.vars) ? "YES" : "no"]")
+		L("  world.map_cpu  : [("map_cpu" in world.vars) ? "YES" : "no"]")
+		L("  world.tick_usage: [("tick_usage" in world.vars) ? "YES" : "no"]")
+		L("")
+		L("clients | mode  | top-of-tick usage | world.cpu | world.map_cpu")
+		spawn(1) monitor()
+
+client
+	New()
+		..()
+		L("  >> client connected, now [clients.len]")
+		place(mob)
+
+	Del()
+		L("  >> client left, now [clients.len - 1]")
+		..()
+
+proc
+	place(mob/M)
+		if(!M) return
+		if(mode == "dense")
+			M.loc = locate(50, 50, 1)
+		else
+			M.loc = locate(90, 90, 1)
+
+	replace_all()
+		for(var/client/C in clients)
+			place(C.mob)
+
+	mapcpu()
+		if("map_cpu" in world.vars)
+			return round(world.vars["map_cpu"], 0.1)
+		return "n/a"
+
+	monitor()
+		var/window = 100
+		while(1)
+			var/total = 0
+			var/peak = 0
+			var/cpu_total = 0
+			var/map_total = 0
+			for(var/i = 1 to window)
+				sleep(world.tick_lag)
+				// first thing after waking: engine overhead already spent this tick
+				var/u = world.tick_usage
+				total += u
+				if(u > peak) peak = u
+				cpu_total += world.cpu
+				if("map_cpu" in world.vars)
+					map_total += world.vars["map_cpu"]
+			L("   [clients.len]\t| [mode]\t| avg [round(total/window,0.1)]% peak [round(peak,0.1)]%\t| [round(cpu_total/window,0.1)]%\t| [round(map_total/window,0.1)]%")
+
+// admin controls, invoked over Topic-free channels by the harness driver
+client/verb/SetDense()
+	mode = "dense"
+	replace_all()
+	L("  ** mode -> dense")
+
+client/verb/SetEmpty()
+	mode = "empty"
+	replace_all()
+	L("  ** mode -> empty")
