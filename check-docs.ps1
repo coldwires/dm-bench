@@ -237,6 +237,30 @@ if (Test-Path $srcDir) {
     if ($violations -eq 0) { Good "no timing bypasses Value()" }
 }
 
+# ------------------------------------------------- 3c. document corruption
+# Patching these files through a shell heredoc has three times mangled
+# backslashes: a path separator became a literal carriage return, another
+# collapsed into one garbage glyph, and once the corruption landed in the
+# command block telling the next session what to run. Nothing caught it but
+# reading. Hence this check. Prefer the Edit tool over shell heredocs here.
+foreach ($d in $docs) {
+    $ln = 0
+    foreach ($line in [System.IO.File]::ReadAllLines($d.FullName)) {
+        $ln++
+        foreach ($ch in $line.ToCharArray()) {
+            if ([int]$ch -lt 32 -and $ch -ne "`t") {
+                $hex = "{0:X2}" -f [int]$ch
+                Bad "$($d.Name):$ln contains a control character (0x$hex). A shell patch probably ate a backslash."
+                break
+            }
+        }
+    }
+    # An odd number of fences means a code block was clobbered mid-edit.
+    $fences = @(Select-String -Path $d.FullName -Pattern '^```').Count
+    if ($fences % 2 -ne 0) { Bad "$($d.Name): $fences code fences, an odd number. A block is unterminated." }
+}
+Good "no document corruption"
+
 # -------------------------------------------------------------- 4. dashes
 foreach ($d in $docs) {
     $hits = @(Select-String -Path $d.FullName -Pattern '[—–]' -AllMatches)
