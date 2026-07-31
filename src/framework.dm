@@ -12,12 +12,20 @@
 // Output is TSV to results.tsv next to the .dmb, with stable test IDs so runs
 // from different BYOND versions diff cleanly.
 
+obj/fw_probe
+
 var/global/OUTFILE
 var/global/OUTPATH
 // Set by the manifest before the first Row(), e.g. "del". Keeps suites from
 // writing over each other when several run against the same build.
 var/global/SUITE_TAG = ""
 var/global/BASE_US = 0
+// Cost of one bare loop iteration with NO accumulator. Rows measured the
+// unrolled, result-discarded way subtract BASE_LOOP_US/unroll instead of
+// BASE_US. Measured 516.1666: bare loop 0.034 us, accumulator a further 0.040.
+// The accumulator is the larger term, which is why dropping it matters more
+// than unrolling. See INSTRUMENTS.md.
+var/global/BASE_LOOP_US = 0
 var/global/PASSED = 0
 var/global/FAILED = 0
 var/global/MEASURED = 0
@@ -66,6 +74,19 @@ var/global/US_PER_PCT = 0
 // Advisory, not disqualifying: it does not mean the figure is wrong, it means
 // the figure will not repeat to the precision it is printed at.
 #define BASELINE_HEAVY_FRAC 0.25
+
+// Unroll helpers. Repeat the measured expression inside one loop iteration so
+// loop machinery is amortised across U operations. Verified on 516.1666: the
+// body executes exactly U times, and a statement following an if() is NOT
+// swallowed into the if body.
+//
+// Pair with discarding the result rather than accumulating it. Together these
+// take the subtracted baseline on istype from 40.7% of the reading to 3.4%.
+// Either alone is worth little: unrolling gets to 34%, discarding to 26%.
+#define X2(s)  s; s
+#define X5(s)  s; s; s; s; s
+#define X10(s) s; s; s; s; s; s; s; s; s; s
+#define UNROLL 10
 
 proc
 	// The run names its own output after the engine that produced it, so a
@@ -147,6 +168,34 @@ proc
 		Row("MEASURE\t[id]\t[category]\t[name]\t[val >= 10 ? round(val,0.1) : round(val,0.01)]\tus\t\t\t[dt]\t[n]")
 		return val
 
+	// A row measured the unrolled, result-discarded way. `unroll` is the factor
+	// the loop body was repeated by, and `reps` is still the total operation
+	// count, not the loop count.
+	//
+	// Subtracts BASE_LOOP_US/unroll, not BASE_US. The measured loop carries no
+	// accumulator, so subtracting an accumulator-inclusive baseline would
+	// over-subtract by about 0.040 us and drive small rows negative.
+	MeasureU(id, category, name, dt, reps, unroll, notes)
+		var/raw = dt * 100000 / reps
+		var/base = BASE_LOOP_US / max(unroll, 1)
+		var/val = raw - base
+		var/flag = ""
+		if(val <= 0)
+			val = 0
+			flag = "BELOW_BASELINE"
+		else if(raw > 0 && (base / raw) > BASELINE_HEAVY_FRAC)
+			flag = "BASELINE_HEAVY"
+		MEASURED++
+		if(dt < MIN_DS)
+			flag = "LOW_RESOLUTION"
+		if(flag == "LOW_RESOLUTION" || flag == "BELOW_BASELINE") LOWRES++
+		else if(flag == "BASELINE_HEAVY") HEAVY++
+		var/n = notes ? notes : ""
+		n = n ? "u=[unroll]; [n]" : "u=[unroll]"
+		if(flag) n = "[flag]; [n]"
+		Row("MEASURE\t[id]\t[category]\t[name]\t[val >= 10 ? round(val,0.1) : round(val,0.01)]\tus\t\t\t[dt]\t[n]")
+		return val
+
 	// ---- tick_usage measurements ----
 
 	// pct is the world.tick_usage delta across the timed block.
@@ -225,6 +274,22 @@ proc
 
 	// A single for-loop cannot exceed 2^24 iterations (see assert_numeric),
 	// and 16.7M at ~0.06us only reaches 10 ds. Nest to get enough runtime.
+	// One pass of a loop with NO body. Measures loop machinery alone, with no
+	// accumulator, which is what an unrolled result-discarded row needs to
+	// subtract.
+	// A bodyless for() is legal, but only when the next statement sits at the
+	// SAME indent. Dedenting straight to `return` is "invalid expression".
+	// Hence `guard`, which runs `outer` times, not `outer * inner`.
+	BareLoopPass(outer, inner)
+		var/guard = 0
+		var/t0 = world.timeofday
+		for(var/o = 1 to outer)
+			for(var/i = 1 to inner)
+			guard++
+		var/dt = world.timeofday - t0
+		if(guard < 0) Row("# unreachable")
+		return dt
+
 	// One pass of the empty loop. A single for() cannot exceed 2^24 iterations,
 	// so this nests.
 	EmptyLoopPass(outer, inner)
@@ -257,6 +322,43 @@ proc
 		Measure("framework.empty_loop", "framework", "empty loop iteration", dt, reps, 0, "baseline, median of 3, subtracted from sub-microsecond rows")
 		Row("# baseline_us\t[round(BASE_US, 0.01)]")
 		Row("# baseline_passes_ds\t[a] [b] [c]")
+
+		// A bare loop is roughly half the cost of one with an accumulator, so it
+		// needs more iterations to clear MIN_DS. At outer=5 it measured 13 ds and
+		// was correctly flagged LOW_RESOLUTION. Every converted row subtracts
+		// this figure, so an under-resolved calibration would propagate.
+		var/bouter = 12
+		var/breps = bouter * inner
+		var/ba = BareLoopPass(bouter, inner)
+		var/bb = BareLoopPass(bouter, inner)
+		var/bc = BareLoopPass(bouter, inner)
+		var/bdt = Median3(ba, bb, bc)
+		BASE_LOOP_US = bdt * 100000 / breps
+		Measure("framework.bare_loop", "framework", "loop iteration, no accumulator", bdt, breps, 0, "median of 3, subtracted from unrolled rows")
+		Row("# baseline_loop_us\t[round(BASE_LOOP_US, 0.01)]")
+
+	// Rows measured by discarding the operation's result depend on DM emitting
+	// an expression whose value is unused. It does on 516.1666, and the compiler
+	// warns `statement has no effect` while emitting it anyway.
+	//
+	// That is a compiler behaviour, not a language guarantee. If a later build
+	// eliminates dead expressions, every such row silently collapses to the
+	// empty-loop cost and reports near zero with nothing flagged. This assertion
+	// makes that fail loudly on the build that introduces it.
+	AssertDiscardedWorkStillCosts()
+		var/R = 4000000
+		var/obj/fw_probe/P = new
+		var/t0 = world.timeofday
+		for(var/i = 1 to R)
+		var/bare = world.timeofday - t0
+		var/t1 = world.timeofday
+		for(var/i = 1 to R)
+			istype(P, /obj/fw_probe)
+		var/discarded = world.timeofday - t1
+		Assert("framework.discarded_work_still_costs", "framework",
+			"an expression whose result is unused is still executed",
+			(discarded > bare * 1.3) ? 1 : 0, 1,
+			"bare loop [bare] ds, discarded istype [discarded] ds over [R]")
 
 	// Wraps a suite call and records how long that section took, so the slow
 	// parts are identified by measurement rather than by guessing.

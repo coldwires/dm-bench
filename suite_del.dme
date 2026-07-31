@@ -27,6 +27,7 @@ world
 			Header()
 			CalibrateClock()
 			CalibrateBaseline()
+			AssertDiscardedWorkStillCosts()
 			Suite_Del()
 			Summary()
 			world.log << "del suite complete: [PASSED] passed, [FAILED] failed"

@@ -37,6 +37,7 @@ world
 			Header()
 			CalibrateClock()
 			CalibrateBaseline()
+			AssertDiscardedWorkStillCosts()
 
 			var/st
 			st = world.timeofday; Suite_Lifetime();  Section("lifetime",  world.timeofday - st)
