@@ -206,6 +206,37 @@ if ($debt.Count -gt 0) {
     Write-Host ""
 }
 
+# ------------------------------------------------------- 3b. source rules
+# The framework has guards; they only apply if the code routes through them.
+# Value() performs NO resolution check, so a timing sent through it bypasses
+# MIN_DS, BASELINE_HEAVY and BELOW_BASELINE and the row looks identical in the
+# output. That rule was written into CLAUDE.md on 2026-07-30 after the del suite
+# was fixed, and perf_calls_deep.dm violated it in 13 places for a further day,
+# because nothing checked. This is that check.
+$timeUnits = @('us', 'ms', 'ds', 's', 's-total', 'x')
+$srcDir = Join-Path $Root "src"
+if (Test-Path $srcDir) {
+    $violations = 0
+    foreach ($f in Get-ChildItem $srcDir -Filter *.dm -File) {
+        $text = Get-Content $f.FullName -Raw
+        foreach ($mm in [regex]::Matches($text, 'Value\(')) {
+            # take the call and a generous tail, since calls wrap across lines
+            $tail = $text.Substring($mm.Index, [math]::Min(400, $text.Length - $mm.Index))
+            $cut = $tail.IndexOf("`n`n")
+            if ($cut -gt 0) { $tail = $tail.Substring(0, $cut) }
+            foreach ($u in $timeUnits) {
+                if ($tail -match [regex]::Escape('"' + $u + '"')) {
+                    $line = ($text.Substring(0, $mm.Index) -split "`n").Count
+                    Bad "$($f.Name):$line  Value() carrying a time unit `"$u`". Timings must use Measure, MeasureTU or MeasureDelta; computed values must use Derived."
+                    $violations++
+                    break
+                }
+            }
+        }
+    }
+    if ($violations -eq 0) { Good "no timing bypasses Value()" }
+}
+
 # -------------------------------------------------------------- 4. dashes
 foreach ($d in $docs) {
     $hits = @(Select-String -Path $d.FullName -Pattern '[—–]' -AllMatches)

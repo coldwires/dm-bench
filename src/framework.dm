@@ -231,8 +231,34 @@ proc
 		Row("MEASURE\t[id]\t[category]\t[name]\t[val >= 10 ? round(val,0.1) : round(val,0.01)]\tus\t\t\t[round(pct,0.01)]\t[n]")
 		return val
 
-	// convenience for raw values that are not per-operation times.
-	// NOTE: performs no resolution check. Do not use it for a timing.
+	// A value COMPUTED from rows already emitted, such as a ratio between two
+	// measurements. It has no dt of its own, so no resolution guard can apply.
+	// Its trustworthiness is inherited: a ratio of two quantization-limited
+	// numbers is worse than either of them.
+	//
+	// Always name the inputs in `notes` so a reader can check them.
+	Derived(id, category, name, val, unit, notes)
+		MEASURED++
+		Row("MEASURE\t[id]\t[category]\t[name]\t[val]\t[unit]\t\t\t\tderived[notes ? "; [notes]" : ""]")
+
+	// A reading taken by ANOTHER instrument, such as world.Profile() self time.
+	// This framework's resolution guards cannot apply, because this framework did
+	// not do the timing. Record what produced it so the number is never mistaken
+	// for one of ours.
+	Extern(id, category, name, val, unit, source, notes)
+		MEASURED++
+		var/n = "measured by [source]"
+		if(notes) n = "[n]; [notes]"
+		Row("MEASURE	[id]	[category]	[name]	[val]	[unit]				[n]")
+
+	// Raw values that are neither times nor derived from times: counts, names,
+	// column labels.
+	//
+	// NOTE: performs NO resolution check. Routing a timing through this bypasses
+	// every guard in the framework, and the row looks identical in the output.
+	// That is how xcheck published a five-quantum measurement as a clean figure
+	// for as long as the file existed. check.ps1 now rejects a Value() call
+	// carrying a time unit.
 	Value(id, category, name, val, unit, notes)
 		MEASURED++
 		Row("MEASURE\t[id]\t[category]\t[name]\t[val]\t[unit]\t\t\t\t[notes ? notes : ""]")
