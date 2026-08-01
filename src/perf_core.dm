@@ -60,22 +60,30 @@ proc
 				flat += "k[i]"
 				amap["k[i]"] = 1
 			var/needle = "k[n]"
-			// scan cost is O(n), so hold total work roughly constant
-			var/reps = (n >= 1000) ? (3000000 / (n / 1000)) : 15000000
+			// scan cost is O(n), so hold total work roughly constant. The
+			// small-n reps rose 15M to 20M with the discarded-unroll
+			// conversion: dropping the accumulator made the blocks faster and
+			// 15M would sit at the MIN_DS edge.
+			var/reps = (n >= 1000) ? (3000000 / (n / 1000)) : 20000000
 
-			CACC = 0
+			// Discarded-unroll, endorsed by differential compilation: a
+			// discarded `in` and a discarded assoc index are both emitted, 16
+			// bytes per copy (INSTRUMENTS.md). Unlike a field read, indexing
+			// is an operation, not a pure read.
+			#pragma push
+			#pragma ignore no_effect
 			var/t0 = world.timeofday
-			for(var/i = 1 to reps)
-				if(needle in flat) CACC++
-			Measure("lists.in_n[n]", "lists", "needle in L, n=[n], worst case",
-				world.timeofday - t0, reps, 1, null)
+			for(var/i = 1 to reps / UNROLL)
+				X10(needle in flat)
+			MeasureU("lists.in_n[n]", "lists", "needle in L, n=[n], worst case",
+				world.timeofday - t0, reps, UNROLL, null)
 
-			CACC = 0
 			var/t1 = world.timeofday
-			for(var/i = 1 to 15000000)
-				if(amap[needle]) CACC++
-			Measure("lists.assoc_n[n]", "lists", "A\[needle\], n=[n]",
-				world.timeofday - t1, 15000000, 1, null)
+			for(var/i = 1 to 20000000 / UNROLL)
+				X10(amap[needle])
+			MeasureU("lists.assoc_n[n]", "lists", "A\[needle\], n=[n]",
+				world.timeofday - t1, 20000000, UNROLL, null)
+			#pragma pop
 
 		// building, 100 elements
 		var/t2 = world.timeofday
@@ -251,21 +259,31 @@ proc
 		var/datum/pc_holder/H = new
 		var/R = 15000000
 
+		// Unrolled, results discarded. A discarded call is emitted (it may
+		// have side effects), so no pragma is needed here; only pure
+		// expressions draw no_effect.
 		var/t0 = world.timeofday
-		for(var/i = 1 to R)
-			PC_GlobalNoop()
-		Measure("calls.global_proc", "calls", "GlobalProc(), empty", world.timeofday - t0, R, 1, null)
+		for(var/i = 1 to R / UNROLL)
+			X10(PC_GlobalNoop())
+		MeasureU("calls.global_proc", "calls", "GlobalProc(), empty", world.timeofday - t0, R, UNROLL, null)
 
 		var/t1 = world.timeofday
-		for(var/i = 1 to R)
-			H.Noop()
-		Measure("calls.datum_method", "calls", "D.Method(), empty", world.timeofday - t1, R, 1, null)
+		for(var/i = 1 to R / UNROLL)
+			X10(H.Noop())
+		MeasureU("calls.datum_method", "calls", "D.Method(), empty", world.timeofday - t1, R, UNROLL, null)
 
 		var/t2 = world.timeofday
-		for(var/i = 1 to R)
-			H.NoopDot()
-		Measure("calls.datum_method_dot", "calls", "D.Method(), sets . = 1", world.timeofday - t2, R, 1, null)
+		for(var/i = 1 to R / UNROLL)
+			X10(H.NoopDot())
+		MeasureU("calls.datum_method_dot", "calls", "D.Method(), sets . = 1", world.timeofday - t2, R, UNROLL, null)
 
+		// The vars rows below stay in accumulator form PERMANENTLY. A
+		// discarded pure read (local, global, world.time, field) is
+		// eliminated by the compiler, verified by differential compilation
+		// on both builds (INSTRUMENTS.md), so a discarded-unroll conversion
+		// would time an empty loop and publish near zero with nothing
+		// flagged. Their BASELINE_HEAVY flag is the honest cost of
+		// measuring a read.
 		var/lv = 5
 		CACC = 0
 		var/t3 = world.timeofday
@@ -338,11 +356,16 @@ proc
 		AllocOne("alloc.mob", /mob, 4000000)
 
 	AllocOne(id, T, reps)
+		// Discarded-unroll: `new T` with the result dropped allocates an
+		// object that is freed on the spot (zero references), the same
+		// churn as the old assign-then-overwrite form without the var
+		// machinery. Live population stays at one either way, so this does
+		// not contaminate anything (and del() rows live in another process
+		// regardless).
 		var/t0 = world.timeofday
-		for(var/i = 1 to reps)
-			var/x = new T
-			x = null
-		Measure(id, "alloc", "new [T]", world.timeofday - t0, reps, 1, null)
+		for(var/i = 1 to reps / UNROLL)
+			X10(new T)
+		MeasureU(id, "alloc", "new [T]", world.timeofday - t0, reps, UNROLL, null)
 
 	// ---------------- movement ----------------
 

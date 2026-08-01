@@ -165,28 +165,33 @@ proc
 			// that their difference is not itself a noise measurement.
 
 	Suite_CallsDeep()
-		var/R = 15000000
+		// 20M rather than 15M: the discarded-unroll conversion dropped the
+		// accumulator, and the cheapest blocks (abs, max) would sit at the
+		// MIN_DS edge at 15M. Loop runs R/UNROLL = 2M times, inside 2^24.
+		var/R = 20000000
 
 		// --- user-defined procs, by argument count ---
+		// Unrolled, results discarded. Calls are emitted when discarded, so
+		// no pragma; the pure builtins below need one.
 		var/t0 = world.timeofday
-		for(var/i = 1 to R)
-			UserNoop0()
-		var/u0 = Measure("calls.user_0args", "calls", "user proc, 0 args", world.timeofday - t0, R, 1, null)
+		for(var/i = 1 to R / UNROLL)
+			X10(UserNoop0())
+		var/u0 = MeasureU("calls.user_0args", "calls", "user proc, 0 args", world.timeofday - t0, R, UNROLL, null)
 
 		var/t1 = world.timeofday
-		for(var/i = 1 to R)
-			UserNoop1(1)
-		var/u1 = Measure("calls.user_1arg", "calls", "user proc, 1 arg", world.timeofday - t1, R, 1, null)
+		for(var/i = 1 to R / UNROLL)
+			X10(UserNoop1(1))
+		var/u1 = MeasureU("calls.user_1arg", "calls", "user proc, 1 arg", world.timeofday - t1, R, UNROLL, null)
 
 		var/t2 = world.timeofday
-		for(var/i = 1 to R)
-			UserNoop4(1, 2, 3, 4)
-		var/u4 = Measure("calls.user_4args", "calls", "user proc, 4 args", world.timeofday - t2, R, 1, null)
+		for(var/i = 1 to R / UNROLL)
+			X10(UserNoop4(1, 2, 3, 4))
+		var/u4 = MeasureU("calls.user_4args", "calls", "user proc, 4 args", world.timeofday - t2, R, UNROLL, null)
 
 		var/t3 = world.timeofday
-		for(var/i = 1 to R)
-			UserNoop8(1, 2, 3, 4, 5, 6, 7, 8)
-		var/u8 = Measure("calls.user_8args", "calls", "user proc, 8 args", world.timeofday - t3, R, 1, null)
+		for(var/i = 1 to R / UNROLL)
+			X10(UserNoop8(1, 2, 3, 4, 5, 6, 7, 8))
+		var/u8 = MeasureU("calls.user_8args", "calls", "user proc, 8 args", world.timeofday - t3, R, UNROLL, null)
 
 		Assert("calls.args_are_copied", "calls",
 			"call cost rises with argument count",
@@ -194,17 +199,30 @@ proc
 			"0 args [round(u0,0.001)] us, 8 args [round(u8,0.001)] us")
 
 		// --- hard-called builtins ---
-		DACC = 0
+		// Discarded pure builtins draw no_effect and are emitted anyway,
+		// abs at ~6 bytes per copy and max at ~14, verified by differential
+		// compilation (INSTRUMENTS.md).
+		//
+		// Their own reps counts, sized by the resolution guard across two
+		// rounds: 20M read LOW_RESOLUTION for both in 6/6 runs, and 40M
+		// still did for abs, which measures about 0.02 us discarded. The
+		// old accumulator-form figure near 0.1 us was mostly harness; the
+		// operation itself is nearly free, so it needs 120M operations
+		// (12M loops, inside 2^24) to fill 15 deciseconds.
+		var/RB = 40000000
+		var/RA = 120000000
+		#pragma push
+		#pragma ignore no_effect
 		var/t4 = world.timeofday
-		for(var/i = 1 to R)
-			DACC += abs(-5)
-		var/h1 = Measure("calls.builtin_abs", "calls", "abs(x), hard builtin", world.timeofday - t4, R, 1, null)
+		for(var/i = 1 to RA / UNROLL)
+			X10(abs(-5))
+		var/h1 = MeasureU("calls.builtin_abs", "calls", "abs(x), hard builtin", world.timeofday - t4, RA, UNROLL, null)
 
-		DACC = 0
 		var/t5 = world.timeofday
-		for(var/i = 1 to R)
-			DACC += max(3, 7)
-		var/h2 = Measure("calls.builtin_max", "calls", "max(a,b), hard builtin", world.timeofday - t5, R, 1, null)
+		for(var/i = 1 to RB / UNROLL)
+			X10(max(3, 7))
+		var/h2 = MeasureU("calls.builtin_max", "calls", "max(a,b), hard builtin", world.timeofday - t5, RB, UNROLL, null)
+		#pragma pop
 
 		Assert("calls.hard_builtin_cheaper_than_user", "calls",
 			"a hard-called builtin costs less than a user-defined proc",
@@ -214,11 +232,10 @@ proc
 		// --- soft-called builtin: vector.Dot() ---
 		var/vector/va = vector(3, 4)
 		var/vector/vb = vector(1, 2)
-		DACC = 0
 		var/t6 = world.timeofday
-		for(var/i = 1 to R)
-			DACC += va.Dot(vb)
-		var/sd = Measure("calls.builtin_vector_dot", "calls", "vector.Dot(), soft-called builtin", world.timeofday - t6, R, 1, null)
+		for(var/i = 1 to R / UNROLL)
+			X10(va.Dot(vb))
+		var/sd = MeasureU("calls.builtin_vector_dot", "calls", "vector.Dot(), soft-called builtin", world.timeofday - t6, R, UNROLL, null)
 
 		Assert("calls.soft_builtin_above_hard", "calls",
 			"a soft-called builtin costs more than a hard-called one",
