@@ -149,9 +149,11 @@ framework.
 
 ## State of the results
 
-`suite_del.dme` passes 7 of 7 on 516.1666 and 516.1685, three runs each. Its
-figures were re-derived after the original timing method proved too coarse to
-distinguish them, and are stable.
+`suite_del.dme` passes 9 of 9 on 516.1666 and 516.1685, three runs merged per
+build, with the population sweep reaching 300,000 live objects. Its population
+figures publish as median plus range: the del() scan is memory-bound, and its
+cost tracks ambient machine conditions run to run even though the shape
+(superlinear growth, flat null cost, permanent residual) holds in every run.
 
 `suite.dme`, three High-priority runs merged per build: 47 assertions, 92
 measurements, 47 passed, 0 failed, 0 unstable on both 516.1666 and 516.1685,
@@ -198,6 +200,9 @@ across a 500x range of workload.
 do not differ at this precision. Ratios between rows measured close together are
 sounder than absolutes, because the two share machine conditions and drift
 partly cancels.
+
+How a measuring machine qualifies before its numbers are published, and the
+full answer to "how were these tests run", is in `METHOD.md`.
 
 Parts of `BYOND-PERF-SPEC.md` predate the current framework, come from harnesses
 not in this repository, and still print more precision than the data supports.
