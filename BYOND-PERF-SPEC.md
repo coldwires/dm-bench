@@ -12,7 +12,7 @@ Measured cost of common BYOND operations.
 - Section 2 uses `world.tick_usage`, calibrated per run at 500 to 507 µs per percent of a tick, with median-of-three.
 - Empty loop baseline: 0.05 to 0.06 µs. Removed from all figures below 1 µs.
 - Where two snippets are claimed equivalent, the harness asserts matching output counts and prints the result.
-- Harnesses: `suite.dme` and `suite_del.dme`. **Not every figure on this page regenerates from them.** Five harnesses are cited across the page and none is in the tree: `spec_sheet.dme`, `hypotheses.dme`, `delscale2.dme`, `delcause.dme`, `respawn.dme`. Sections carrying imported figures are flagged in place.
+- Harnesses: `suite.dme` and `suite_del.dme`. Sections 1 through 10, 13 and 14 regenerate from them, including all of section 2 as of 2026-08-01. Figures still imported from harnesses absent from this tree are flagged in place: the `respawn.dme` line in section 8, and sections 11 and 12, whose harnesses (`spec_sheet.dme`, `hypotheses.dme`) predate this suite.
 
 **Repeatability and precision.** Every baseline is three runs merged, median
 and spread per row. **Absolute figures carry an error bar of at least 15%,
@@ -77,7 +77,13 @@ for(var/mob/M in view(7, c)) ...
 for(var/obj/O in view(7, c)) ...                           // 150 µs
 ```
 
-Verified identical output in all three runs. Ratio 2.0 to 2.1x. Caching a view for reuse is slower than running the query twice.
+Verified identical output in all three runs. Caching a view for reuse is
+slower than running the query twice, on every build measured, but the margin
+is build-dependent: **2.0 to 2.1x on 516.1666, 1.8 to 1.9x on 516.1685**,
+measured as within-run ratios in interleaved runs, six of six without
+overlap. The requery arm is what moved; the likeliest reading is that the
+view() call itself costs slightly more on 1685, though the single-call rows
+are too noisy to certify that.
 
 ### Family
 
@@ -114,119 +120,114 @@ view(10)    36 µs
 
 ## 2. del()
 
-> **Re-measured 2026-07-30 on 516.1666 and 516.1685**, using `world.tick_usage`
-> with median-of-three. The old figures were differences between two
-> `world.timeofday` blocks, only one to four clock quanta wide, so a result could
-> only land on a multiple of 100000/reps.
+> **Every figure in this section regenerates from `suite_del.dme`** as of
+> 2026-08-01: three runs merged per build, `world.tick_usage` with
+> median-of-three inside each run, and the population sweep now reaches
+> 300,000. Earlier versions of this section imported tables from harnesses
+> that were not in the tree; those harnesses are no longer cited, and where
+> the inherited figures could be checked they fell inside the re-measured
+> ranges.
 >
-> **Only the reference-count table below was re-measured.** Everything after it
-> comes from `delscale2.dme`, `delcause.dme` and `hypotheses.dme`, **none of which
-> are in this tree**, and it uses a population series (to 300,000) that
-> `suite_del.dme` does not run (it stops at 200,000). Those tables are unverified
-> and are flagged individually.
->
-> What the 1666-versus-1685 comparison establishes is that **`suite_del.dme`'s own
-> figures are unchanged across the GC fixes**. It does not validate the tables
-> below, and it does not reproduce the 3,300x headline, which rests on a
-> 300,000-object measurement no harness in this tree performs.
+> **The population rows are ambient-sensitive and are published as median
+> plus range.** The del() scan is memory-bound, so its per-object cost moves
+> with cache and memory conditions: across three same-morning triples the
+> population rows spread 30 to 65%, with both builds moving together. The
+> shape (superlinear growth, flat null, permanent residual) is stable; the
+> coefficients belong partly to the machine and the moment.
 
 ### Cost by reference count
 
 Clean world, 400 turfs, live object count held at zero in both arms. Median of
-three, three runs per build.
+three, three runs per build, 2026-08-01.
 
 | Heap refs on victim | 516.1666 | 516.1685 |
 |---|---|---|
 | 0 | not resolvable | not resolvable |
-| 1 | 9.4 to 10.7 µs | 9.4 to 10.4 µs |
-| 256 | 11.4 to 13.7 µs | 10.7 to 14.2 µs |
+| 1 | 9.6 to 11.0 µs | 9.1 to 11.4 µs |
+| 256 | 9.6 to 14.7 µs | 10.0 to 17.8 µs |
 
-One heap reference costs about 10 µs. **256 references cost roughly 1.3x that,
-not the same.** The direction held in every run on both builds.
+One heap reference costs about 10 µs. 256 references cost somewhere between
+the same and 1.5x, with the 256-ref arm being the highest-variance quantity
+in this suite. Nearly flat against a 256x change in reference count either
+way; the design guidance is unchanged.
 
-That is still very nearly flat: 256x the references buys 1.3x the cost, so
-reference count barely matters and the design guidance is unchanged. But the
-earlier claim that cost is *flat* in reference count, and the supporting series
-"8.3, 10.3, 8.3, 10.3, 8.3 µs, no drift", were reading quantization rather than
-the engine. Both are withdrawn.
+The zero-reference case is **not measurable by this harness**. Its signal is 3
+to 8 percent of a tick against a 20 percent floor, so it is flagged
+`LOW_RESOLUTION` and withheld.
 
-The zero-reference case is **not measurable by this harness**. Its signal is 3 to
-8 percent of a tick against a 20 percent floor, so it is flagged
-`LOW_RESOLUTION` and withheld. The earlier "0 µs, zero heap references is free"
-was that same artifact reported as a finding.
+### The scan runs only for references del cannot see
+
+`del(H[1])`, where the indexed list slot is the victim's only heap reference,
+costs 0.13 to 0.18 µs, the same as the zero-reference case, while `del(e)`
+through a local with the same single reference held elsewhere costs the full
+10 µs. The expensive part of del() is the hunt for references it cannot
+account for from the deletion site. Asserted as
+`del.accounted_ref_is_free`, passing on both builds, so an engine that
+changes this behaviour flips a cell in the matrix.
 
 ### Cost by live object count
 
 Clean world, population grown monotonically. Victim holds one heap reference.
+Median of three runs, with the observed range, 2026-08-01.
 
-**Unverified, from harnesses not in this tree.** `delscale2.dme` and
-`delcause.dme` are cited as the source and neither exists here. Where the series
-overlaps what `suite_del.dme` does measure, the two disagree well outside the 15%
-band this page claims for itself:
+| Live objs | 516.1666 | 516.1685 |
+|---|---|---|
+| 0 | 11.7 (9.1 to 12.5) µs | 9.7 (9.4 to 12.4) µs |
+| 50,000 | 110 (78 to 123) µs | 119 (71 to 141) µs |
+| 100,000 | 273 (174 to 321) µs | 260 (147 to 268) µs |
+| 200,000 | 1,760 (1,456 to 2,261) µs | 1,661 (1,349 to 2,430) µs |
+| 300,000 | 3,243 (2,578 to 3,775) µs | 3,513 (2,443 to 3,715) µs |
 
-| Live objs | published | `suite_del.dme`, 516.1666 | `suite_del.dme`, 516.1685 |
-|---|---|---|---|
-| 0 | 10 µs | 9.6 to 9.7 µs | 9.4 to 11.4 µs |
-| 10,000 | 20 µs | not measured | not measured |
-| 25,000 | 50 µs | not measured | not measured |
-| 50,000 | 75 µs | 81 to 132 µs | 76 to 87 µs |
-| 100,000 | 210 µs | 169 to 207 µs | 178 to 210 µs |
-| 200,000 | 1,860 µs | **2,398 to 2,605 µs** | **2,437 to 2,590 µs** |
-| 300,000 | 3,345 µs | not measured | not measured |
+Growth is superlinear above 50,000 on both builds: 6x the population from 50k
+to 300k costs about 30x the time. The ranges are wide because the scan is
+memory-bound and tracks ambient machine conditions; the shape held in every
+run.
 
-The 200,000 row is 29 to 40% above the published value on both builds, and the
-old `world.timeofday` baseline read 2,333 there, so this is not the clock change.
-The published series should be treated as indicative until a harness in this tree
-reproduces it.
-
-Growth is superlinear above 50,000. That much is reproduced by `suite_del.dme` on
-both builds and is not in doubt.
-
-At 300,000 live objs and `tick_lag 0.5`, 15 deletions consume the tick. **Rests on
-the unverified 300,000 figure.**
+At 300,000 live objs and `tick_lag 0.5`, roughly 15 deletions consume the
+tick.
 
 ### Turfs are not counted
 
-Map resized with no objects present:
+Map resized with no objects present, one heap ref on the victim:
 
-| Map | Turfs | del cost |
+| Turfs | 516.1666 | 516.1685 |
 |---|---|---|
-| 20x20 | 400 | 17 µs |
-| 60x60 | 3,600 | 17 µs |
-| 100x100 | 10,000 | 17 µs |
-| 160x160 | 25,600 | 17 µs |
-| 220x220 | 48,400 | 17 µs |
+| 10,000 | 9.4 µs | 11.0 µs |
+| 48,400 | 11.5 µs | 11.7 µs |
 
-Completely flat. Only objs and mobs contribute.
+Flat within the ranges above. Turfs do not feed the scan.
 
 ### Cumulative allocation does not matter
 
-Objects allocated then immediately freed, so live count stays at zero:
+500,000 objects allocated and immediately freed between two measurements,
+live count held at zero:
 
-| Cumulative allocations | Live objs | del cost |
+| | 516.1666 | 516.1685 |
 |---|---|---|
-| 20,000 | 0 | 10 µs |
-| 140,000 | 0 | 10 µs |
-| 380,000 | 0 | 10 µs |
-| 620,000 | 0 | 10 µs |
+| before the churn | 10.6 µs | 10.4 µs |
+| after 500k allocated and freed | 10.2 µs | 10.7 µs |
 
-Flat. How many objects a server has created over its lifetime is irrelevant.
+Flat. How many objects a server has created over its lifetime is irrelevant;
+only concurrent population counts.
 
 ### Peak concurrent population leaves a permanent residual
 
-| State | Live objs | del cost |
+| State | 516.1666 | 516.1685 |
 |---|---|---|
-| cold start | 0 | 10 µs |
-| grown to 300,000 | 300,000 | 3,345 µs |
-| all 300,000 freed | 0 | **180 µs** |
+| cold start, 0 live | 11.7 µs | 9.7 µs |
+| grown to 300,000 | 3,243 µs | 3,513 µs |
+| all 300,000 freed | **213 (167 to 232) µs** | **205 (157 to 231) µs** |
 
-Freeing the population does not restore the cold cost. Whatever structure the scan walks grows with peak concurrent live count and never shrinks. A one-off population spike raises `del()` cost 18x for the remaining life of the process.
+Freeing the population does not restore the cold cost. Whatever structure the
+scan walks grows with peak concurrent live count and never shrinks. A one-off
+population spike raises `del()` cost roughly 18 to 22x for the remaining life
+of the process.
 
 ### Alternative
 
 ```dm
-del(thing)          // 3,345 µs at 300k live objs
-thing = null        // 1 µs, flat at any population
+del(thing)          // ~3,200 µs at 300k live objs (2,400 to 3,800 observed)
+thing = null        // ~1 µs, flat at any population
 ```
 
 ### Not a defect: confirmed across the GC fixes
@@ -251,10 +252,11 @@ procs in the scheduler simultaneously. This suite is deliberately isolated and
 carries no scheduler load, so the comparison never exercised the fixed path. What
 is shown is that the isolated case is unaffected.
 
-The comparison covers `suite_del.dme`'s own rows, which stop at 200,000 live
-objects. **The 3,300x headline is not among them.** It derives from a
-300,000-object measurement made by a harness absent from this tree, and no run on
-either build reproduced it.
+That comparison was made when the sweep stopped at 200,000. The sweep has
+since been extended to 300,000 (2026-08-01) and the 300k figures above come
+from this tree on both builds, so the headline ratio no longer rests on an
+absent harness. The values the older harness published fell inside the
+re-measured ranges.
 
 ### Measurement note
 
@@ -698,10 +700,10 @@ Shifting past bit 23 produces a mask of **zero**, not a large number. A flag def
 | Rule | Ratio |
 |---|---|
 | `for(var/mob/M in view())` instead of assigning `view()` to a var | 1.7x empty, 10x typical, 77x crowded |
-| Re-query `view()` instead of caching for two passes | 2.0 to 2.1x |
+| Re-query `view()` instead of caching for two passes | 2.0x on 1666, 1.8x on 1685 |
 | `range()` instead of `view()` when line of sight is not needed | 2.3 to 3x |
 | Push from the event instead of polling from observers | 9.2 to 9.6x |
-| `thing = null` instead of `del(thing)` | ~2,400x at 200k live objs (measured); 3,300x at 300k is unverified, see 2 |
+| `thing = null` instead of `del(thing)` | ~3,000x at 300k live objs, measured (range 2,400 to 3,800) |
 | `loc =` instead of `Move()` when callbacks are not needed | 8 to 11x |
 | Associative list above 20 entries | up to 70x |
 | `+=` instead of `.Add()` for list building | 1.4x |

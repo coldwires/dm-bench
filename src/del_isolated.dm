@@ -65,6 +65,26 @@ proc
 		if((b[1] <= a[1] && a[1] <= c[1]) || (c[1] <= a[1] && a[1] <= b[1])) return a
 		return c
 
+	// The victim's ONLY heap reference is the list slot the del expression
+	// indexes through. VERIFICATION 12: this reads like the zero-ref case at
+	// any population, because the scan runs only for references del cannot
+	// account for from the deletion site.
+	DelIndexArm(reps)
+		var/tu0 = world.tick_usage
+		for(var/r = 1 to reps)
+			var/list/H = new(1)
+			H[1] = new /obj/del_obj
+			del(H[1])
+		return world.tick_usage - tu0
+
+	DelIndexDrop(reps)
+		var/tu0 = world.tick_usage
+		for(var/r = 1 to reps)
+			var/list/H = new(1)
+			H[1] = new /obj/del_obj
+			H = null
+		return world.tick_usage - tu0
+
 	Churn(n)
 		for(var/i = 1 to n)
 			var/obj/del_obj/e = new
@@ -89,14 +109,37 @@ proc
 		Assert("del.one_ref_costs", "del",
 			"a single heap reference makes del() cost real time",
 			(one > 3) ? 1 : 0, 1, "[round(one, 0.01)] us")
+		// 3x, not 1.5x. The 256-ref delete arm is the highest-variance
+		// quantity in this file (documented in INSTRUMENTS.md; net values
+		// ranged 9.6 to 18.2 us across six runs on 2026-08-01), and per-run
+		// ratios reached 1.66 from noise alone, flipping the old 1.5x
+		// threshold once. The claim being tested is flat-versus-scaling:
+		// O(refs) would read near 256x, flat reads near 1.3x, so 3x
+		// separates them with headroom instead of sitting in the noise tail.
 		Assert("del.refcount_does_not_scale", "del",
-			"256 references cost no more than 1",
-			(many <= one * 1.5) ? 1 : 0, 1,
+			"256 references cost far less than 256x one",
+			(many <= one * 3) ? 1 : 0, 1,
 			"1 ref [round(one,0.01)] us, 256 refs [round(many,0.01)] us")
 
 		MeasureDelta("del.refs_0", "del", "del cost, 0 heap refs", z[2], z[3], 60000, null)
 		MeasureDelta("del.refs_1", "del", "del cost, 1 heap ref", o[2], o[3], 60000, null)
 		MeasureDelta("del.refs_256", "del", "del cost, 256 heap refs", m[2], m[3], 20000, null)
+
+		// --- a reference del can account for from the deletion site ---
+		// del(H[1]) where the indexed slot is the victim's only heap ref.
+		// Reads like refs_0, not refs_1: the expensive scan is the hunt for
+		// UNACCOUNTED references, and this one is in del's hand already. Its
+		// delta is small by design, so the row carries the same resolution
+		// flags refs_0 does; the assertion is what matters. A build that
+		// starts scanning here anyway flips this to FAIL.
+		var/ihi = DelIndexArm(60000)
+		var/ilo = DelIndexDrop(60000)
+		var/via_index = (ihi - ilo) * US_PER_PCT / 60000
+		Assert("del.accounted_ref_is_free", "del",
+			"del through the ref's own list slot skips the scan",
+			(via_index < 2) ? 1 : 0, 1,
+			"[round(via_index, 0.01)] us via del(H\[1\]) vs [round(one, 0.01)] us with an unaccounted ref")
+		MeasureDelta("del.ref_via_index", "del", "del cost, sole ref indexed by the del expression", ihi, ilo, 60000, null)
 
 		// --- turfs are not counted ---
 		var/list/sm = DelNet(40000, 1)
@@ -133,10 +176,13 @@ proc
 		var/list/cd = DelNet(40000, 1)
 		var/cold = cd[1]
 		MeasureDelta("del.live_0", "del", "del cost at 0 live objs", cd[2], cd[3], 40000, null)
-		for(var/target in list(50000, 100000, 200000))
+		// 300k added 2026-08-01: the published population table and the 3,300x
+		// headline rest on a 300k figure from a harness that is not in this
+		// tree. This sweep now reaches it, so the table regenerates from here.
+		for(var/target in list(50000, 100000, 200000, 300000))
 			while(DEL_BALLAST.len < target)
 				Grow(10000)
-			var/reps = (target >= 200000) ? 1500 : 6000
+			var/reps = (target >= 300000) ? 1000 : ((target >= 200000) ? 1500 : 6000)
 			var/list/lv = DelNet(reps, 1)
 			var/cost = lv[1]
 			MeasureDelta("del.live_[target]", "del", "del cost at [target] live objs", lv[2], lv[3], reps, null)
@@ -154,5 +200,5 @@ proc
 		Assert("del.peak_leaves_residual", "del",
 			"freeing the population does not restore the cold cost",
 			(after_free > cold * 3) ? 1 : 0, 1,
-			"[round(cold,0.01)] us cold, [round(after_free,0.01)] us after 200k existed and were freed")
+			"[round(cold,0.01)] us cold, [round(after_free,0.01)] us after 300k existed and were freed")
 		MeasureDelta("del.residual_after_peak", "del", "del cost after peak population freed", af[2], af[3], 20000, null)
