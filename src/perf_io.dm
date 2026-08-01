@@ -75,18 +75,21 @@ proc
 		// threshold carries headroom: 2x still separates per-call dominance
 		// decisively, since per-byte cost would put 100x the payload near
 		// 100x the price.
-		var/sdt = Median3(IO_WritePass(probe, "short line", 8000), \
-			IO_WritePass(probe, "short line", 8000), \
-			IO_WritePass(probe, "short line", 8000))
+		// 10000 writes per pass, raised from 8000: the median pass read 13
+		// to 14 ds under fast ambient conditions and drew LOW_RESOLUTION in
+		// 2 of 6 runs. 10000 puts the short arm near 26 ds.
+		var/sdt = Median3(IO_WritePass(probe, "short line", 10000), \
+			IO_WritePass(probe, "short line", 10000), \
+			IO_WritePass(probe, "short line", 10000))
 		var/short_us = Measure("io.file_write_short", "io", "file << 10-char line",
-			sdt, 8000, 1, "median of 3 passes")
+			sdt, 10000, 1, "median of 3 passes")
 
 		var/long_line = IO_LongLine()
-		var/ldt = Median3(IO_WritePass(probe, long_line, 8000), \
-			IO_WritePass(probe, long_line, 8000), \
-			IO_WritePass(probe, long_line, 8000))
+		var/ldt = Median3(IO_WritePass(probe, long_line, 10000), \
+			IO_WritePass(probe, long_line, 10000), \
+			IO_WritePass(probe, long_line, 10000))
 		var/long_us = Measure("io.file_write_long", "io", "file << 1000-char line",
-			ldt, 8000, 1, "median of 3 passes")
+			ldt, 10000, 1, "median of 3 passes")
 
 		// The syscall dominates, not the payload. Batching lines into one
 		// write is therefore close to free per extra line.

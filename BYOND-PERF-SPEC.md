@@ -319,19 +319,35 @@ Spread is 0.05 µs across all five. Dispatch strategy is a design decision, not 
 
 ## 6. Calls and variable access
 
-Baseline removed.
+Call rows use the discarded-unroll instrument; three High-priority runs
+merged, 2026-07-31. The vars rows keep an accumulator, because a discarded
+pure read is eliminated by the compiler, and they sit at the instrument's
+floor: one significant figure at best.
 
 ```dm
-GlobalProc()                     // empty proc             // 0.12 µs
-D.Method()                       // empty datum method     // 0.18 µs
-D.Method()                       // sets . = 1             // 0.17 µs
+GlobalProc()                     // empty proc             // 0.14 µs
+D.Method()                       // empty datum method     // 0.16 µs
+D.Method()                       // sets . = 1             // 0.18 µs
+UserProc(a)                      // 1 arg                  // 0.15 µs
+UserProc(a, ..., h)              // 8 args                 // 0.26 µs
+abs(x)                           // hard builtin           // 0.02 µs
+max(a, b)                        // hard builtin           // 0.05 µs
+V.Dot(W)                         // soft-called builtin    // 0.09 µs
 acc += local_var                                           // 0.02 µs
-acc += global_var                                          // 0.02 µs
+acc += global_var                                          // 0.01 µs
 acc += world.time                                          // 0.04 µs
-acc += D.x                       // datum var              // 0.09 µs
+acc += D.x                       // datum var              // 0.10 µs
 ```
 
-A proc call is 0.12 to 0.18 µs. Datum variable access is 4x a local and still under 0.1 µs. Globals cost the same as locals.
+A proc call is 0.14 to 0.18 µs, and each argument adds about 0.015. **A
+hard-called builtin is nearly free**: `abs()` at 0.02 µs is about a ninth of
+a user proc (measured ratio 9.2x), with a soft-called builtin between them
+at 0.09. An earlier figure near 0.1 µs for `abs` was mostly harness, the
+accumulator and its branch; the discarded-unroll conversion removed both and
+the figure moved on 2026-07-31.
+
+Datum variable access is measurably above a local, 0.10 against 0.02.
+Globals cost the same as locals.
 
 At `tick_lag 0.5` this allows roughly 300,000 proc calls per tick.
 
@@ -354,22 +370,27 @@ findtext(hay, "lazy")            // 43-char haystack       // 2.04 µs
 
 ## 8. Allocation
 
-Baseline removed. Three High-priority runs merged, 2026-07-31.
+Discarded-unroll instrument, three High-priority runs merged, 2026-07-31.
 
 ```dm
-new /datum                                                 // 0.20 µs
-new /datum/holder                // 1 var, 2 procs         // 0.22 µs
-new /obj                                                   // 0.46 µs
-new /mob                                                   // 0.53 µs
+new /datum                                                 // 0.19 µs
+new /datum/holder                // 1 var, 2 procs         // 0.19 µs
+new /obj                                                   // 0.45 µs
+new /mob                                                   // 0.45 µs
 ```
 
-An earlier version claimed a blank `/mob` costs the same as a blank `/obj` and
-that var count, not type, drives allocation cost. The data supports neither.
-The mob reads 10 to 22% above the obj across merges, same direction in every
-run. The large step is datum to obj, 0.20 to 0.46, which is a type
-distinction with no vars added; one var on a datum adds nothing measurable.
-The two datum rows are BASELINE_HEAVY, meaning a quarter or more of the raw
-reading is the subtracted empty-loop term.
+**A blank `/mob` and a blank `/obj` are indistinguishable**: 0.45 µs each,
+spreads 4 and 11%. This conclusion moved twice in one day and the history
+matters. The original equivalence claim was withdrawn in the morning because
+the accumulator-form instrument read the mob 10 to 22% above the obj, same
+direction in every run. The discarded-unroll conversion then removed the
+accumulator, and the difference went with it: it belonged to the harness,
+not the type. 516.1685 gives the same verdict, 0.52 and 0.56 with
+overlapping ranges.
+
+The step that is real is datum to obj, 0.19 to 0.45, a type distinction with
+no vars added. One var on a datum adds nothing measurable, 0.19 against
+0.19.
 
 A mob with 30 vars and 3 lists measured 2.6 µs by the unported respawn
 harness; indicative only, per the harness note at the top of this page.

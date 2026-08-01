@@ -153,20 +153,19 @@ framework.
 figures were re-derived after the original timing method proved too coarse to
 distinguish them, and are stable.
 
-`suite.dme`, three High-priority runs merged: 47 assertions, 92 measurements,
-47 passed, 0 failed, 0 unstable, 15 of 92 rows varying more than 25% across the
-triple. The write-cost-per-call comparison that failed 2 of 9 runs earlier the
-same day now takes median-of-three per arm against a 2x threshold and held; a
-clean triple does not disprove instability, but the fix changes the mechanism
-rather than betting on quiet runs. The istype scaling rows (depth, ancestor,
-unrelated miss, with a typesof ordering control) were added in the same batch.
-A normal-priority triple from the same day is kept alongside as
-`516.1666-windows-normal-priority.tsv`; the count of wide rows tracks ambient
-machine load and ranged 11 to 30 across same-day triples.
-
-516.1685 has the same three-run merged baseline
-(`results/516.1685-windows-merged.tsv`): 47 passed, 0 failed, 0 unstable, 10
-wide rows, and every assertion verdict identical to 516.1666.
+`suite.dme`, three High-priority runs merged per build: 47 assertions, 92
+measurements, 47 passed, 0 failed, 0 unstable on both 516.1666 and 516.1685,
+with every assertion verdict identical across the two builds. 8 of 92 rows on
+1666 and 7 of 92 on 1685 vary more than 25% across their triples, and those
+that do are the rows pinned at the instrument's floor (the vars reads) or
+derived ratios. The lookup, call and allocation rows use the discarded-unroll
+instrument as of 2026-07-31, which cut the subtracted-baseline share of those
+rows from up to 40% to a few percent and reduced the BASELINE_HEAVY count
+from 13 rows to the four vars reads, which keep an accumulator because the
+compiler eliminates a discarded pure read outright. A normal-priority triple
+is kept alongside as `516.1666-windows-normal-priority.tsv` as the priority
+experiment's record; the count of wide rows tracks ambient machine load and
+ranged 11 to 30 across same-day triples.
 
 ### Precision
 
