@@ -358,18 +358,24 @@ proc
 			CACC += length(s)
 		Measure("strings.concat", "strings", "s = a + b", world.timeofday - t1, R, 1, null)
 
+		// These two are timed with tick_usage: both routines are 2 to 4x
+		// cheaper on the Linux machine than on the Windows one, so at these
+		// rep counts findtext filled 21 deciseconds there and 5 here, under
+		// the floor. Same reasoning as the io write rows; a rep count that
+		// suits both machines does not exist, and tick_usage has no quantum to
+		// clear. Neither loop yields, so a plain before-and-after delta holds.
 		CACC = 0
-		var/t2 = world.timeofday
+		var/tu2 = world.tick_usage
 		for(var/i = 1 to 2000000)
 			CACC += length(num2text(i))
-		Measure("strings.num2text", "strings", "num2text(i)", world.timeofday - t2, 2000000, 1, null)
+		MeasureTU("strings.num2text", "strings", "num2text(i)", world.tick_usage - tu2, 2000000, 1, null)
 
 		var/hay = "the quick brown fox jumps over the lazy dog"
 		CACC = 0
-		var/t3 = world.timeofday
+		var/tu3 = world.tick_usage
 		for(var/i = 1 to 1000000)
 			CACC += findtext(hay, "lazy")
-		Measure("strings.findtext", "strings", "findtext, 43-char haystack", world.timeofday - t3, 1000000, 1, null)
+		MeasureTU("strings.findtext", "strings", "findtext, 43-char haystack", world.tick_usage - tu3, 1000000, 1, null)
 
 	// ---------------- allocation ----------------
 
