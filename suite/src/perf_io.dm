@@ -34,12 +34,23 @@ proc
 		var/c = IO_Reference(reps)
 		return Median3(a, b, c) * 100000 / reps
 
-	// One timed pass of `reps` writes of `line` to `f`, in deciseconds.
+	// One timed pass of `reps` writes of `line` to `f`, in percent of a tick.
+	//
+	// world.tick_usage, not world.timeofday, since 2026-08-02. A file write
+	// costs about 190 us on the Windows machine and about 10 on the Linux one,
+	// so 10,000 writes fill 19 deciseconds there and 1 here: the same rep count
+	// cannot clear a 0.1 second quantum on both machines, and no single
+	// constant can be chosen that does. Raising reps 30x to suit the faster
+	// machine would put one row into the minutes on the slower one. tick_usage
+	// carries four to six significant figures and has no quantum to clear, so
+	// the row resolves on both without either machine dictating the other's
+	// rep count. Safe here because these loops never yield, which
+	// io.file_write_does_not_yield asserts directly.
 	IO_WritePass(f, line, reps)
-		var/t0 = world.timeofday
+		var/tu0 = world.tick_usage
 		for(var/i = 1 to reps)
 			f << line
-		return world.timeofday - t0
+		return world.tick_usage - tu0
 
 	Suite_IO()
 		var/probe = file("io_probe.tmp")
@@ -80,14 +91,14 @@ proc
 		var/sdt = Median3(IO_WritePass(probe, "short line", 10000), \
 			IO_WritePass(probe, "short line", 10000), \
 			IO_WritePass(probe, "short line", 10000))
-		var/short_us = Measure("io.file_write_short", "io", "file << 10-char line",
+		var/short_us = MeasureTU("io.file_write_short", "io", "file << 10-char line",
 			sdt, 10000, 1, "median of 3 passes")
 
 		var/long_line = IO_LongLine()
 		var/ldt = Median3(IO_WritePass(probe, long_line, 10000), \
 			IO_WritePass(probe, long_line, 10000), \
 			IO_WritePass(probe, long_line, 10000))
-		var/long_us = Measure("io.file_write_long", "io", "file << 1000-char line",
+		var/long_us = MeasureTU("io.file_write_long", "io", "file << 1000-char line",
 			ldt, 10000, 1, "median of 3 passes")
 
 		// The syscall dominates, not the payload. Batching lines into one
@@ -112,30 +123,43 @@ proc
 			(long_us > short_us * 0.9) ? 1 : 0, 1,
 			"short [round(short_us,2)] us, long [round(long_us,2)] us, ratio [round(short_us > 0 ? long_us/short_us : 0, 0.01)]x")
 
-		var/t2 = world.timeofday
+		var/tu2 = world.tick_usage
 		for(var/i = 1 to 400000)
 			world.log << "short line"
-		var/log_us = Measure("io.world_log_short", "io", "world.log << 10-char line",
-			world.timeofday - t2, 400000, 1, null)
+		var/log_us = MeasureTU("io.world_log_short", "io", "world.log << 10-char line",
+			world.tick_usage - tu2, 400000, 1, null)
 
-		Assert("io.world_log_far_cheaper_than_file", "io",
-			"world.log is dramatically cheaper than a direct file write",
-			(log_us < short_us / 10) ? 1 : 0, 1,
-			"world.log [round(log_us,2)] us vs file [round(short_us,2)] us")
+		// 2x, lowered from 10x on 2026-08-02. The claim under test is that
+		// stdout logging is materially cheaper than an unbuffered file write,
+		// and it holds on both machines: 43x on Windows, 5x on Linux, where a
+		// file write is about 19x cheaper to begin with. A 10x threshold
+		// encoded one machine's margin as the claim and failed 6 of 6 runs on
+		// the other for a reason that has nothing to do with the engine.
+		//
+		// This ratio moves with how DreamDaemon's stdout is bound, since
+		// world.log goes to stdout and the file arm does not: bound to a file
+		// it is fully buffered on Linux and slower on Windows. The binding is
+		// stamped into every result as stdout_binding rather than assumed, and
+		// the measured multiple is published per machine instead of asserted
+		// as one number.
+		Assert("io.world_log_cheaper_than_file", "io",
+			"world.log is materially cheaper than a direct file write",
+			(log_us < short_us / 2) ? 1 : 0, 1,
+			"world.log [round(log_us,2)] us vs file [round(short_us,2)] us, [round(log_us > 0 ? short_us/log_us : 0, 0.1)]x")
 
 		// --- interpolation is separate from the write ---
-		// 15000, raised from 8000 on 2026-08-01. This row is the cheapest of the
-		// three file-write arms, about 175 us against 210 for the short line, so
-		// 8000 writes put it at 14 to 18 deciseconds against a 15 floor. It drew
-		// LOW_RESOLUTION in one run of a triple, which withholds it from the spec
-		// sheet and the site, and it is the last row in this suite sitting on the
-		// guard. 15000 puts it near 26.
+		// Rep history, which is the argument for the clock change: 8000 put
+		// this row at 14 to 18 deciseconds against a 15 floor and it drew
+		// LOW_RESOLUTION in one Windows run; 15000 fixed that here and still
+		// read 2 deciseconds on Linux, where the write is 19x cheaper. Chasing
+		// a rep count that suits both machines is unwinnable, so the row is
+		// timed with tick_usage and the count stays where Windows put it.
 		var/interp_writes = 15000
-		var/t3 = world.timeofday
+		var/tu3 = world.tick_usage
 		for(var/i = 1 to interp_writes)
 			probe << "iteration [i] of the run"
-		Measure("io.file_write_interpolated", "io", "file << line with one embedded value",
-			world.timeofday - t3, interp_writes, 1, "includes string building")
+		MeasureTU("io.file_write_interpolated", "io", "file << line with one embedded value",
+			world.tick_usage - tu3, interp_writes, 1, "includes string building")
 
 		// --- does the framework's own logging perturb the next measurement? ---
 		// This is the question that decides whether results.tsv should move to
