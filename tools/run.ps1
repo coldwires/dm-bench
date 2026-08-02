@@ -31,7 +31,9 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-$Root      = $PSScriptRoot
+# This script lives in tools/; every path below is relative to the repository
+# root, one level up.
+$Root      = Split-Path $PSScriptRoot -Parent
 $Standalone = Join-Path $Root "byond-standalones"
 $ResultsDir = Join-Path $Root "results"
 
@@ -82,7 +84,7 @@ if ($bad) {
 $targets = if ($Version -eq "all") { $builds } else { $builds | Where-Object { $_.Label -eq $Version } }
 if (-not $targets) { throw "no build matching '$Version'. Try -List." }
 
-$dme = Join-Path $Root "$Suite.dme"
+$dme = Join-Path $Root "suite\$Suite.dme"
 if (-not (Test-Path $dme)) { throw "no such suite: $dme" }
 if (-not (Test-Path $ResultsDir)) { New-Item -ItemType Directory -Path $ResultsDir | Out-Null }
 
@@ -100,9 +102,10 @@ foreach ($b in $targets) {
     "  compile: $($summary.Trim())"
     if ($compile -match '\b([1-9]\d*) error') { Write-Error "compile failed on $($b.Label)"; continue }
 
-    $dmb = Join-Path $Root "$Suite.dmb"
+    # dm.exe writes the .dmb beside the .dme, which is suite/ now.
+    $dmb = Join-Path $Root "suite\$Suite.dmb"
     Copy-Item $dmb $wd -Force
-    Get-ChildItem $Root -Filter "$Suite.rsc" -ErrorAction SilentlyContinue | Copy-Item -Destination $wd -Force
+    Get-ChildItem (Join-Path $Root "suite") -Filter "$Suite.rsc" -ErrorAction SilentlyContinue | Copy-Item -Destination $wd -Force
 
     $before = Get-ChildItem $wd -Filter "results-*.tsv" | Select-Object -ExpandProperty Name
 
@@ -121,11 +124,23 @@ foreach ($b in $targets) {
     $sw.Stop()
     "  ran in $([int]$sw.Elapsed.TotalSeconds)s"
 
+    # A run that produces nothing must fail loudly. dd.exe prints
+    # "FAILED to open port" and then exits 0, so exit code proves nothing, and
+    # a suite run that takes seconds instead of minutes has not run.
+    if ($sw.Elapsed.TotalSeconds -lt 30) {
+        Write-Error ("$Suite on $($b.Label) exited after $([int]$sw.Elapsed.TotalSeconds)s. A port collision looks exactly like this: dd.exe fails to open port $port, prints it, and exits 0. Try another port.")
+        continue
+    }
+
     # A pre-existing file counts only if this run rewrote it. Compare against the
     # run's start time; comparing against $sw.Elapsed (a TimeSpan) throws.
     $produced = Get-ChildItem $wd -Filter "results-*.tsv" | Where-Object { $before -notcontains $_.Name -or $_.LastWriteTime -gt $started }
-    if (-not $produced) { $produced = Get-ChildItem $wd -Filter "results-*.tsv" | Sort-Object LastWriteTime -Descending | Select-Object -First 1 }
-    if (-not $produced) { Write-Error "no results file produced on $($b.Label)"; continue }
+    # NO fallback to "the newest file lying around". Until 2026-08-01 this
+    # reached for the most recent results-*.tsv when the run produced nothing,
+    # which filed the PREVIOUS run's data under this run's name. Six such
+    # copies were taken as a fresh triple before the assertion count gave it
+    # away. Absence must be an error, never a guess.
+    if (-not $produced) { Write-Error "no results file produced on $($b.Label); the run wrote nothing this session"; continue }
 
     foreach ($f in $produced) {
         # Trust the file's own header over anything this script believes.

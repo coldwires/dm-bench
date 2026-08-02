@@ -89,7 +89,8 @@ function Median([double[]]$v) {
 }
 
 $build = $builds[0]; $system = $systems[0]
-if (-not $Out) { $Out = Join-Path $PSScriptRoot ("results\{0}-{1}-merged.tsv" -f $build, $system) }
+# This script lives in tools/; results/ is at the repository root, one level up.
+if (-not $Out) { $Out = Join-Path (Split-Path $PSScriptRoot -Parent) ("results\{0}-{1}-merged.tsv" -f $build, $system) }
 $outDir = Split-Path $Out -Parent
 if ($outDir -and -not (Test-Path $outDir)) { New-Item -ItemType Directory -Path $outDir -Force | Out-Null }
 
