@@ -58,12 +58,20 @@ machines; ratios do. Compare a build against itself on the same hardware.
 
 Builds live in `byond-standalones/<version>/bin/`, one complete BYOND each.
 Nothing is installed, no registry key is written, and the system BYOND is not
-used. Extract a release into a new folder and the runner finds it.
+used. Extract a release into a new folder and the runner finds it. The
+binaries are Byond Software's and are not redistributed here.
+
+`.\tools\fetch-byond.ps1 -Version 516.1685` will download and lay one out for
+you. It
+is **unverified against the network**: it was written without running a
+download, so if the release URL has changed, pass `-Url` with the real one.
+Extracting a release by hand into `byond-standalones/<version>/` is equivalent
+and always works.
 
 ```powershell
-.\run.ps1 -List                                  # discovered builds
-.\run.ps1 -Suite suite_del -Version 516.1685
-.\run.ps1 -Suite suite -Version all
+.\tools\run.ps1 -List                                  # discovered builds
+.\tools\run.ps1 -Suite suite_del -Version 516.1685
+.\tools\run.ps1 -Suite suite -Version all
 ```
 
 Runs execute DreamDaemon at High process priority by default, which halves the
@@ -76,8 +84,8 @@ stamp and were taken at normal priority.
 Manually:
 
 ```
-byond-standalones\516.1666\bin\dm.exe suite.dme
-byond-standalones\516.1666\bin\dd.exe suite.dmb 47899 -trusted -invisible
+byond-standalones\516.1666\bin\dm.exe suite\suite.dme
+byond-standalones\516.1666\bin\dd.exe suite\suite.dmb 47899 -trusted -invisible
 ```
 
 On Linux, set `LD_LIBRARY_PATH` to the BYOND `bin` directory first.
@@ -101,7 +109,7 @@ so an under-resolved row stays auditable.
 Building a baseline from several runs:
 
 ```powershell
-.\merge-runs.ps1 -Runs build\run1,build\run2,build\run3 -Out results\516.1666-windows-merged.tsv
+.\tools\merge-runs.ps1 -Runs build\run1,build\run2,build\run3 -Out results\516.1666-windows-merged.tsv
 ```
 
 A baseline from a single run cannot show whether the suite is stable, so the
@@ -120,21 +128,58 @@ document exists. It exits non-zero on failure.
 ## Layout
 
 ```
-run.ps1              build discovery and runner
-merge-runs.ps1       merge N runs into one baseline, median and spread
-check-docs.ps1       documentation consistency check
-suite.dme            manifest, non-contaminating tests
-suite_del.dme        del() tests, separate process by necessity
-src/framework.dm     emission, assertions, clock calibration, resolution guards
-src/assert_*.dm      known-answer behaviour tests
-src/perf_*.dm        cost measurements
-results/             baselines, one per build and system
-net/                 two-machine client probe, not part of either suite
-BYOND-PERF-SPEC.md   measured results
+suite/suite.dme            manifest, non-contaminating tests
+suite/suite_del.dme        del() tests, separate process by necessity
+suite/src/framework.dm     emission, assertions, clock calibration, guards
+suite/src/assert_*.dm      known-answer behaviour tests
+suite/src/perf_*.dm        cost measurements
+
+tools/run.ps1              build discovery and runner
+tools/merge-runs.ps1       merge N runs into one baseline, median and spread
+tools/check-docs.ps1       documentation consistency check
+tools/fetch-byond.ps1      download a BYOND release into byond-standalones/
+
+results/                   baselines, one per build and system
+site/gen-site.ps1          renders results/ into site/index.html
+docs/BYOND-PERF-SPEC.md    measured results
+docs/METHOD.md             how these tests were run, and how a machine qualifies
+net/                       two-machine client probe, not part of either suite
+extras/                    unported harnesses and standalone demonstrations
+LICENSE                    MIT, harness and documents only, not BYOND itself
 ```
 
-`load.dme` and `respawn.dme` are earlier harnesses, not yet ported to the
-framework.
+Everything under `suite/` is the thing being published: DM source and nothing
+else. Everything under `tools/` runs it. `results/` is the data those tools
+produced, and `site/` renders that data into a page. Three directories the
+repository does not carry are created locally by use: `byond-standalones/`
+holds one full BYOND per build, `build/` is per-run scratch, and a private
+`working/` holds the maintainers' operating notes.
+
+`extras/load.dme` and `extras/respawn.dme` are earlier harnesses, not yet
+ported to the framework. `extras/noeffect.dme` is a standalone demonstration
+of the discarded-expression compiler behaviour the measurement form depends
+on.
+
+### The harness and the suite are separable
+
+`suite/src/framework.dm` is the library: output format, assertions, clock
+calibration, the resolution guards and the emission helpers. It knows nothing
+about what is being measured. The `assert_*` and `perf_*` files are one suite
+written with it, and the two `.dme` manifests are what bind a set of them into
+a runnable world.
+
+To measure something else with the same guarantees, include `framework.dm` in
+your own manifest, call `Header()`, `CalibrateClock()` and
+`CalibrateBaseline()` once, and route every timing through `Measure`,
+`MeasureU`, `MeasureTU` or `MeasureDelta`. `Value()` exists for counts and
+labels and applies no resolution check, which is why `check-docs.ps1` rejects
+a `Value()` call carrying a time unit.
+
+Two rules travel with the library. Name a measurement's iteration count once
+and use it both to drive the loop and to divide the result, because passing
+them separately is how two rows here published 1.83x high. And keep anything
+that grows the live object population out of the same process as a `del()`
+measurement.
 
 | Module | Covers |
 |---|---|
@@ -149,25 +194,39 @@ framework.
 
 ## State of the results
 
-`suite_del.dme` passes 9 of 9 on 516.1666 and 516.1685, three runs merged per
-build, with the population sweep reaching 300,000 live objects. Its population
-figures publish as median plus range: the del() scan is memory-bound, and its
-cost tracks ambient machine conditions run to run even though the shape
-(superlinear growth, flat null cost, permanent residual) holds in every run.
+All baselines were regenerated on 2026-08-01 from three interleaved runs per
+build of each suite.
 
-`suite.dme`, three High-priority runs merged per build: 47 assertions, 92
-measurements, 47 passed, 0 failed, 0 unstable on both 516.1666 and 516.1685,
-with every assertion verdict identical across the two builds. 8 of 92 rows on
-1666 and 7 of 92 on 1685 vary more than 25% across their triples, and those
-that do are the rows pinned at the instrument's floor (the vars reads) or
-derived ratios. The lookup, call and allocation rows use the discarded-unroll
-instrument as of 2026-07-31, which cut the subtracted-baseline share of those
-rows from up to 40% to a few percent and reduced the BASELINE_HEAVY count
-from 13 rows to the four vars reads, which keep an accumulator because the
-compiler eliminates a discarded pure read outright. A normal-priority triple
-is kept alongside as `516.1666-windows-normal-priority.tsv` as the priority
-experiment's record; the count of wide rows tracks ambient machine load and
-ranged 11 to 30 across same-day triples.
+`suite_del.dme` passes 10 of 10 on 516.1666 and 516.1685, with the population
+sweep reaching 300,000 live objects. Its population figures publish as median
+plus range: the del() scan is memory-bound, and its cost tracks ambient machine
+conditions run to run even though the shape (superlinear growth, flat null
+cost, permanent residual) holds in every run, which
+`del.population_sweep_monotonic` now asserts rather than assumes.
+
+`suite.dme`, three High-priority runs merged per build: 52 assertions, 92
+measurements, 52 passed, 0 failed, 0 unstable on both 516.1666 and 516.1685,
+with every assertion verdict identical across the two builds. 4 of 92 rows on
+1666 and 6 of 92 on 1685 vary more than 25% across their triples, and those
+that do are the rows pinned at the instrument's floor (the vars reads, the
+framework's own baseline rows) or derived ratios. The lookup, call and
+allocation rows use the discarded-unroll instrument as of 2026-07-31, which
+cut the subtracted-baseline share of those rows from up to 40% to a few
+percent and reduced the BASELINE_HEAVY count to the four vars reads, which
+keep an accumulator because the compiler eliminates a discarded pure read
+outright. A normal-priority triple is kept alongside as
+`516.1666-windows-normal-priority.tsv` as the priority experiment's record;
+the count of wide rows tracks ambient machine load and has ranged 4 to 30
+across triples on this machine.
+
+**Six of the assertions encode invariants rather than behaviour**: that the
+view() radius sweep rises at every step, that three rows timing the same
+operation agree, that linear search scales with list size while associative
+lookup does not, that a longer write is not cheaper than a shorter one, and
+that del() cost rises with population. They exist because a wrong divisor
+published two rows 1.83x high through every repeatability check the suite had.
+Each has been observed failing, via a compiled-out `BREAKCHECK` block that
+reintroduces the defect it guards against.
 
 ### Precision
 
