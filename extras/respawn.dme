@@ -2,8 +2,10 @@ var/global/logf
 var/global/made = 0
 var/global/gone = 0
 
+// Writes beside the .dmb, like noeffect.dme. An absolute path here was one
+// machine's scratch directory and could not run anywhere else.
 proc/L(msg)
-	if(!logf) logf = file("reftest/respawn.txt")
+	if(!logf) logf = file("respawn-out.txt")
 	logf << msg
 
 // ---------- the two competing shapes ----------

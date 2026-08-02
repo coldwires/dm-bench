@@ -6,8 +6,10 @@ var/global/logf
 var/global/list/players = list()
 var/global/list/clutter = list()
 
+// Writes beside the .dmb, like noeffect.dme. An absolute path here was one
+// machine's scratch directory and could not run anywhere else.
 proc/L(msg)
-	if(!logf) logf = file("reftest/load.txt")
+	if(!logf) logf = file("load-out.txt")
 	logf << msg
 
 proc/us(dt, reps)

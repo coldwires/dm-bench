@@ -12,8 +12,10 @@ var/global/logf
 var/global/mode = "dense"
 var/global/list/samples = list()
 
+// Writes beside the .dmb. probe.dme logs to /opt/byondtest because it runs on
+// the Linux server; this one runs wherever it is compiled.
 proc/L(msg)
-	if(!logf) logf = file("reftest/maptick.txt")
+	if(!logf) logf = file("maptick-out.txt")
 	logf << msg
 
 turf/floor
