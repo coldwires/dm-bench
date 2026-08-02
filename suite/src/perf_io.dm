@@ -44,8 +44,6 @@ proc
 	Suite_IO()
 		var/probe = file("io_probe.tmp")
 
-		probe = file("io_probe.tmp")
-
 		// --- does writing yield to the scheduler? ---
 		// world.time only advances when the scheduler runs. A proc that never
 		// yields holds the tick, so an unchanged world.time means no yield.
@@ -58,14 +56,15 @@ proc
 			(wt1 == wt0) ? 1 : 0, 1,
 			"world.time [wt0] before, [wt1] after 4000 writes")
 
+		var/log_writes = 20000
 		var/lt0 = world.time
-		for(var/i = 1 to 20000)
+		for(var/i = 1 to log_writes)
 			world.log << "suite io probe [i]"
 		var/lt1 = world.time
 		Assert("io.world_log_does_not_yield", "io",
 			"world.log write does not yield to the scheduler",
 			(lt1 == lt0) ? 1 : 0, 1,
-			"world.time [lt0] before, [lt1] after 4000 writes")
+			"world.time [lt0] before, [lt1] after [log_writes] writes")
 
 		// --- cost per write ---
 		// VERIFICATION 8.11: as single 8000-write passes these arms are 15 to
@@ -98,6 +97,21 @@ proc
 			(long_us < short_us * 2) ? 1 : 0, 1,
 			"[round(short_us,2)] us at 10 chars, [round(long_us,2)] us at 1000 chars, 100x the data, medians of 3")
 
+#ifdef BREAKCHECK
+		long_us = short_us * 0.5       // long write cheaper than short
+#endif
+		// The invariant under the claim above: 100x the payload may cost
+		// almost nothing extra, but it cannot cost less. A run reading the
+		// long write cheaper than the short one is measuring noise, which is
+		// what happened in 2 of 9 runs before 8.11 raised the reps and took
+		// medians per arm. 0.9, against a measured 1.10 to 1.13 across six
+		// runs on two builds; both arms are timed adjacently, so the ratio
+		// cancels the drift that moves each of them.
+		Assert("io.long_write_not_cheaper_than_short", "io",
+			"a 1000-char write does not cost less than a 10-char one",
+			(long_us > short_us * 0.9) ? 1 : 0, 1,
+			"short [round(short_us,2)] us, long [round(long_us,2)] us, ratio [round(short_us > 0 ? long_us/short_us : 0, 0.01)]x")
+
 		var/t2 = world.timeofday
 		for(var/i = 1 to 400000)
 			world.log << "short line"
@@ -110,11 +124,18 @@ proc
 			"world.log [round(log_us,2)] us vs file [round(short_us,2)] us")
 
 		// --- interpolation is separate from the write ---
+		// 15000, raised from 8000 on 2026-08-01. This row is the cheapest of the
+		// three file-write arms, about 175 us against 210 for the short line, so
+		// 8000 writes put it at 14 to 18 deciseconds against a 15 floor. It drew
+		// LOW_RESOLUTION in one run of a triple, which withholds it from the spec
+		// sheet and the site, and it is the last row in this suite sitting on the
+		// guard. 15000 puts it near 26.
+		var/interp_writes = 15000
 		var/t3 = world.timeofday
-		for(var/i = 1 to 8000)
+		for(var/i = 1 to interp_writes)
 			probe << "iteration [i] of the run"
 		Measure("io.file_write_interpolated", "io", "file << line with one embedded value",
-			world.timeofday - t3, 8000, 1, "includes string building")
+			world.timeofday - t3, interp_writes, 1, "includes string building")
 
 		// --- does the framework's own logging perturb the next measurement? ---
 		// This is the question that decides whether results.tsv should move to

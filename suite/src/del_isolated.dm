@@ -32,6 +32,18 @@ proc
 
 	// identical build, dropped instead of deleted. live count stays at zero,
 	// so this is a control rather than a population-growing baseline.
+	//
+	// THE CONTRACT, for any reviewer of this pair: both arms must end each
+	// iteration with the victim destroyed and every reference gone, because
+	// the published figure compares two COMPLETE ways of achieving deletion.
+	// H = null is not optional: without it the list would keep the victim
+	// alive past e = null (deletion never happens) and 20k survivors per
+	// call would grow the live population mid-suite. One asymmetry is
+	// intended and stays: this arm frees H while its slots are live (paying
+	// a refcount decrement per slot), the del arm frees H after del()
+	// already nulled the slots. Each path pays its own true bookkeeping;
+	// that is the design-alternative comparison the spec publishes. An
+	// asymmetry OTHER than that one is a bug.
 	DropArm(reps, nrefs)
 		var/tu0 = world.tick_usage
 		for(var/r = 1 to reps)
@@ -179,18 +191,34 @@ proc
 		// 300k added 2026-08-01: the published population table and the 3,300x
 		// headline rest on a 300k figure from a harness that is not in this
 		// tree. This sweep now reaches it, so the table regenerates from here.
+		// Kept per population so the sweep's ordering can be asserted. These
+		// rows are the most ambient-sensitive in the project, 30 to 65% spread
+		// across same-morning triples (item 13), which is exactly why the
+		// invariant is asserted as an ordering rather than as coefficients.
+		var/list/live_us = list()
 		for(var/target in list(50000, 100000, 200000, 300000))
 			while(DEL_BALLAST.len < target)
 				Grow(10000)
 			var/reps = (target >= 300000) ? 1000 : ((target >= 200000) ? 1500 : 6000)
 			var/list/lv = DelNet(reps, 1)
 			var/cost = lv[1]
+			live_us["[target]"] = cost
 			MeasureDelta("del.live_[target]", "del", "del cost at [target] live objs", lv[2], lv[3], reps, null)
 			if(target == 200000)
 				Assert("del.live_count_drives_cost", "del",
 					"del() cost rises sharply with live object count",
 					(cost > cold * 20) ? 1 : 0, 1,
 					"[round(cold,0.01)] us cold vs [round(cost,0.01)] us at 200k live")
+
+#ifdef BREAKCHECK
+		live_us["300000"] = live_us["200000"] / 2   // cost falling with population
+#endif
+		Assert("del.population_sweep_monotonic", "del",
+			"del() cost rises at every step of the population sweep",
+			(cold < live_us["50000"] && live_us["50000"] < live_us["100000"] \
+				&& live_us["100000"] < live_us["200000"] \
+				&& live_us["200000"] < live_us["300000"]) ? 1 : 0, 1,
+			"0:[round(cold,0.01)] 50k:[round(live_us["50000"],0.01)] 100k:[round(live_us["100000"],0.01)] 200k:[round(live_us["200000"],0.01)] 300k:[round(live_us["300000"],0.01)] us")
 
 		// --- peak population leaves a permanent residual ---
 		DEL_BALLAST.Cut()

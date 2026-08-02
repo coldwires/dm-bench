@@ -53,6 +53,9 @@ proc
 	// ---------------- lists ----------------
 
 	Suite_Lists()
+		// Kept per size so the sweep's ordering can be asserted after it runs.
+		var/list/in_us = list()
+		var/list/assoc_us = list()
 		for(var/n in list(10, 100, 1000, 5000))
 			var/list/flat = list()
 			var/list/amap = list()
@@ -75,15 +78,36 @@ proc
 			var/t0 = world.timeofday
 			for(var/i = 1 to reps / UNROLL)
 				X10(needle in flat)
-			MeasureU("lists.in_n[n]", "lists", "needle in L, n=[n], worst case",
+			in_us["[n]"] = MeasureU("lists.in_n[n]", "lists", "needle in L, n=[n], worst case",
 				world.timeofday - t0, reps, UNROLL, null)
 
 			var/t1 = world.timeofday
 			for(var/i = 1 to 20000000 / UNROLL)
 				X10(amap[needle])
-			MeasureU("lists.assoc_n[n]", "lists", "A\[needle\], n=[n]",
+			assoc_us["[n]"] = MeasureU("lists.assoc_n[n]", "lists", "A\[needle\], n=[n]",
 				world.timeofday - t1, 20000000, UNROLL, null)
 			#pragma pop
+
+#ifdef BREAKCHECK
+		in_us["5000"] = in_us["10"] / 2       // scan cost falling with size
+		assoc_us["5000"] = assoc_us["10"] * 5 // assoc lookup scaling
+#endif
+		// The sweep's shape is the published claim, so it is asserted, not left
+		// to a reader comparing four rows by eye. A linear scan must cost more
+		// on a longer list at every step; measured steps are 3x or wider.
+		Assert("lists.in_scales_with_size", "lists",
+			"linear search cost rises at every list size",
+			(in_us["10"] < in_us["100"] && in_us["100"] < in_us["1000"] && in_us["1000"] < in_us["5000"]) ? 1 : 0, 1,
+			"10:[round(in_us["10"],0.01)] 100:[round(in_us["100"],0.01)] 1000:[round(in_us["1000"],0.01)] 5000:[round(in_us["5000"],0.01)] us")
+
+		// The other half of the same claim, and the one the design advice rests
+		// on. 3x, against a measured 1.5 to 1.6x across six runs: the assoc
+		// column drifts upward slightly at the instrument's floor, which the
+		// spec sheet reads as flat within its error bar. O(n) would be 500x.
+		Assert("lists.assoc_stays_flat", "lists",
+			"associative lookup does not scale with list size",
+			(assoc_us["10"] > 0 && assoc_us["5000"] < assoc_us["10"] * 3) ? 1 : 0, 1,
+			"10:[round(assoc_us["10"],0.01)] 5000:[round(assoc_us["5000"],0.01)] us, against in at 5000 of [round(in_us["5000"],0.01)]")
 
 		// building, 100 elements
 		var/t2 = world.timeofday
