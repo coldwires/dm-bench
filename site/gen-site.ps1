@@ -58,7 +58,7 @@ function UnitHtml([string]$u) {
 # actually ran. An id like lists.in_n10 matches a source literal like
 # "lists.in_n[n]" by treating embedded [expr] as a wildcard.
 
-$SrcFiles = Get-ChildItem (Join-Path $Root "src") -Filter "*.dm" | Sort-Object Name
+$SrcFiles = Get-ChildItem (Join-Path $Root "suite\src") -Filter "*.dm" | Sort-Object Name
 $EmitIndex = New-Object System.Collections.Generic.List[object]
 foreach ($sf in $SrcFiles) {
     $lines = Get-Content $sf.FullName
@@ -142,10 +142,28 @@ function Get-Snippet([string]$id) {
                         $defEnd = $j
                         if ($lines[$j] -match '^\s*return\b') { break }
                     }
+                    # An emit call passes its iteration count by name, so that
+                    # the loop and the divisor cannot drift apart (VERIFICATION
+                    # 14). Splice in the line that defines it, or the snippet
+                    # reads "VW_Inline(r_view, 7)" and the reader cannot see
+                    # how many iterations produced the figure.
+                    $consts = New-Object System.Collections.Generic.List[string]
+                    $seenNames = @()
+                    foreach ($im in [regex]::Matches(($emitLine -replace '"[^"]*"', '""'), '\b([a-z]\w*)\b')) {
+                        $n2 = $im.Groups[1].Value
+                        if ($n2 -in $skipNames -or $seenNames -contains $n2) { continue }
+                        $seenNames += $n2
+                        for ($j = $e.At - 1; $j -ge [math]::Max(0, $e.At - 40); $j--) {
+                            if ($lines[$j] -match ('^\s*var/' + [regex]::Escape($n2) + '\s*=\s*\d+\s*$')) {
+                                $consts.Add($lines[$j].Trim()); break
+                            }
+                        }
+                    }
                     $rebuilt = New-Object System.Collections.Generic.List[string]
                     if ($ctxLine) { $rebuilt.Add($ctxLine); $rebuilt.Add('') }
                     foreach ($dl in $lines[$defAt..$defEnd]) { $rebuilt.Add($dl) }
                     $rebuilt.Add('')
+                    foreach ($cl in $consts) { $rebuilt.Add($cl) }
                     $rebuilt.Add($emitLine)
                     $snip = @($rebuilt)
                 }
@@ -354,7 +372,7 @@ $L.Add('<h2>Why trust these numbers</h2>')
 $L.Add('<p class="sub">Most BYOND performance advice has been repeated for years without anyone timing it. This page exists so you can check instead of trust. Here is what stands behind the numbers.</p>')
 $L.Add('<div class="trust">')
 $trust = @(
-    @('This page is generated from data files.', 'Every figure comes from a results file in the repository. Nothing here is typed in by hand, so nothing can quietly drift away from the data.'),
+    @('This page is generated from data files.', 'Every figure comes from a results file in the repository, including the ratios in the rules table at the bottom, which are computed when the page is built. Nothing here is typed in by hand, so nothing can quietly drift away from the data. Until 2026-08-01 that was true of the tables but not of the rules, two of which quoted a harness that is not in the repository; they were removed rather than restated.'),
     @('A result cannot be filed under the wrong engine.', 'The suite names its own output file from the engine version it detects at runtime, the runner refuses build folders whose binaries report a different version, and the merge tool rejects runs from different builds, different priorities, or runs that died early.'),
     @('Every figure shows its spread.', 'Each number is the median of three separate runs, and the variation between those runs is printed right next to it. A number that jumped around between runs says so.'),
     @('The harness measures itself before it measures the engine.', 'At startup the suite times an empty loop, and that cost gets subtracted from the small measurements so the loop machinery is never billed to the operation. Where the subtracted part is still a large share of a reading, the row carries a flag saying so.'),
@@ -427,27 +445,74 @@ $L.Add('</section>')
 # ---- design rules ----
 $L.Add('<section id="rules">')
 $L.Add('<h2>What to do about it</h2>')
-$L.Add('<p class="sub">The ratios that survive measurement, stated as rules. Ratios hold across machines; the absolute times above do not.</p>')
+$L.Add('<p class="sub">The ratios that survive measurement, stated as rules. Ratios hold across machines; the absolute times above do not. Every figure in this column is computed from the same baselines as the tables above, at generation time. A rule whose rows are missing or withheld in a baseline does not appear at all, which is why some advice you may have seen on this page before is gone: it rested on a harness that is not in the repository.</p>')
 $L.Add('<div class="scroll"><table>')
 $L.Add('<thead><tr><th>rule</th><th class="num">measured advantage</th></tr></thead><tbody>')
-$rules = @(
-    @('Iterate <code>for(var/mob/M in view())</code> instead of assigning view() to a list', '1.7x empty, 10x typical, 77x crowded'),
-    @('Re-query view() for a second pass instead of caching it', '2.0x on 1666, 1.8x on 1685'),
-    @('Use range() when line of sight is not needed', '2.3 to 3x'),
-    @('Push events to observers instead of polling from them', '9.2 to 9.6x'),
-    @('Set <code>thing = null</code> and let refcounting work instead of del()', '~3,000x at 300k live objects'),
-    @('Assign <code>loc</code> directly when Enter/Exit callbacks are not needed', '8 to 11x'),
-    @('Use an associative list for lookups above ~20 entries', 'up to 70x'),
-    @('Build lists with <code>+=</code> rather than .Add()', '1.4x'),
-    @('Clear <code>contents</code> before nullspacing an atom', 'prevents a permanent leak'),
-    @('Never define a flag above bit 23', 'masks past 2^24 are silently zero'),
-    @('Keep every loop under 16,777,216 iterations', 'loops past 2^24 never terminate')
-)
+
+# Ratios computed from the merges, never typed in. Until 2026-08-01 this table
+# was a hardcoded list, two of whose figures ("77x crowded", "9.2 to 9.6x")
+# came from harnesses absent from the tree, on a page whose own trust section
+# says nothing here is typed by hand. Those two rules are gone rather than
+# restated: the page's rule is that what could not be measured here is absent.
+function RowVal($set, [string]$id) {
+    $r = $set.Rows[$id]
+    if (-not $r) { return $null }
+    if ($r.Withheld) { return $null }
+    $d = 0.0
+    if (-not [double]::TryParse($r.Val, [ref]$d)) { return $null }
+    if ($d -eq 0) { return $null }
+    return $d
+}
+# One ratio per build, so a build-dependent advantage shows as one.
+function RatioTxt($setA, $setB, [string]$hi, [string]$lo, [string]$labA, [string]$labB) {
+    $out = @()
+    foreach ($pair in @(@($setA, $labA), @($setB, $labB))) {
+        $h = RowVal $pair[0] $hi
+        $l = RowVal $pair[0] $lo
+        if ($null -eq $h -or $null -eq $l) { continue }
+        $out += "{0}x on {1}" -f ([math]::Round($h / $l, 1)), $pair[1]
+    }
+    if ($out.Count -eq 0) { return $null }
+    return ($out -join ', ')
+}
+
+$rules = New-Object System.Collections.Generic.List[object]
+# clutter_0, not build_only/inline_typed. Both pairs time the same comparison,
+# but the clutter pair measures its two arms adjacently in one block, so drift
+# cancels; the other pair is separated by the whole two-pass section and read
+# 8.2x where the adjacent pair read 9.5x. The spec sheet quotes the adjacent
+# pair, and two published figures for one claim must not disagree.
+$typicalTyped = RatioTxt $s66 $s85 'view.clutter_0_raw' 'view.clutter_0_typed' '1666' '1685'
+$crowdedTyped = RatioTxt $s66 $s85 'view.clutter_1200_raw' 'view.clutter_1200_typed' '1666' '1685'
+if ($typicalTyped -and $crowdedTyped) {
+    $rules.Add(@('Iterate <code>for(var/mob/M in view())</code> instead of assigning view() to a list', "$typicalTyped at 667 atoms; $crowdedTyped with 1,200 more in view"))
+}
+$twoPass = RatioTxt $s66 $s85 'view.twopass_cached' 'view.twopass_requery' '1666' '1685'
+if ($twoPass) { $rules.Add(@('Re-query view() for a second pass instead of caching it', $twoPass)) }
+$rangeVsView = RatioTxt $s66 $s85 'view.family_view' 'view.family_range' '1666' '1685'
+if ($rangeVsView) { $rules.Add(@('Use range() when line of sight is not needed', $rangeVsView)) }
+$locVsMove = RatioTxt $s66 $s85 'movement.move_proc' 'movement.loc_assign' '1666' '1685'
+if ($locVsMove) { $rules.Add(@('Assign <code>loc</code> directly when Enter/Exit callbacks are not needed', $locVsMove)) }
+$assoc = RatioTxt $s66 $s85 'lists.in_n5000' 'lists.assoc_n5000' '1666' '1685'
+if ($assoc) { $rules.Add(@('Use an associative list for lookups instead of <code>in</code>, at 5,000 entries', $assoc)) }
+$addVsPlus = RatioTxt $s66 $s85 'lists.build_add' 'lists.build_plus' '1666' '1685'
+if ($addVsPlus) { $rules.Add(@('Build lists with <code>+=</code> rather than .Add()', $addVsPlus)) }
+# del() is stated as a cost, not as a ratio: this tree measures del() at
+# population, but has no published row for the null-assignment arm, so a
+# multiple would have an unmeasured denominator.
+$del300 = RowVal $d66 'del.live_300000'
+$del300b = RowVal $d85 'del.live_300000'
+if ($del300 -and $del300b) {
+    $rules.Add(@('Drop the last reference and let refcounting collect, instead of calling del()', ("del() costs {0:N0} &micro;s on 1666 and {1:N0} &micro;s on 1685 at 300,000 live objects" -f [math]::Round($del300), [math]::Round($del300b))))
+}
+$rules.Add(@('Clear <code>contents</code> before nullspacing an atom', 'prevents a permanent leak'))
+$rules.Add(@('Never define a flag above bit 23', 'masks past 2^24 are silently zero'))
+$rules.Add(@('Keep every loop under 16,777,216 iterations', 'loops past 2^24 never terminate'))
 foreach ($rule in $rules) {
     $L.Add("<tr><td>$($rule[0])</td><td class=`"num`">$($rule[1])</td></tr>")
 }
 $L.Add('</tbody></table>')
-$L.Add('<caption></caption></div>')
+$L.Add('<caption>Ratios computed from the merged baselines when this page was generated. The last three rules carry no figure because they are behaviour, asserted in the table above rather than timed.</caption></div>')
 $L.Add('<p class="sub">Type-test strategy (istype, type ==, bitfield, associative category) has no measurable performance impact; istype is flat across tree depth and relatedness. Dispatch is a design decision, not a performance one.</p>')
 $L.Add('</section>')
 
