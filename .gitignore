@@ -14,12 +14,19 @@ byond-standalones/
 # Per-build scratch working directories created by run.ps1
 build/
 
+# Research material: third-party test cases and source artifacts backing
+# VERIFICATION items. Not ours to publish; the findings they produce go into
+# the public record, the artifacts themselves do not.
+research/
+
 # Transient run output. The suite writes results-<version>-<system>.tsv beside
-# the .dmb; only curated copies under results/ are kept.
-/results-*.tsv
+# the .dmb; only curated copies under results/ are kept. Unanchored, so a stray
+# is ignored wherever it lands rather than only at the root. Curated baselines
+# are safe: they are named 516.1666-windows-merged.tsv, with no results- prefix.
+results-*.tsv
 /results.tsv
 /results_del.tsv
-/*-out.txt
+*-out.txt
 
 # Screen captures
 *.mp4
@@ -27,7 +34,14 @@ build/
 # Working notes. These are operating documents for the maintainers, not part of
 # the published suite: methodology scratch, audit trails, source provenance and
 # the open worklist. What they contain that belongs to the public record gets
-# written into README.md and BYOND-PERF-SPEC.md instead.
+# written into README.md and docs/BYOND-PERF-SPEC.md instead.
+#
+# The folder is working/, not notes/, because check-docs.ps1 treats a notes/
+# prefix as the sibling project's and skips such paths unchecked.
+working/
+
+# Belt and braces: ignored by name too, so a copy left at the root is still
+# not published by accident.
 CLAUDE.md
 VERIFICATION.md
 INSTRUMENTS.md
