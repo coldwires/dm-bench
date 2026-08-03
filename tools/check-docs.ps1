@@ -54,7 +54,7 @@ foreach ($dd in $docDirs) {
 # contributor or CI would run it in. They are still required whenever they
 # exist locally: a working tree that has them must not quietly stop checking
 # them, which was the original point.
-$publicDocs  = @('README.md', 'BYOND-PERF-SPEC.md', 'METHOD.md')
+$publicDocs  = @('README.md', 'CONTRIBUTING.md', 'BYOND-PERF-SPEC.md', 'METHOD.md')
 $privateDocs = @('CLAUDE.md', 'VERIFICATION.md', 'INSTRUMENTS.md')
 $missingDocs = @($publicDocs | Where-Object { $docs.Name -notcontains $_ })
 if ($missingDocs.Count -gt 0) { Bad "published document(s) not found on the doc path: $($missingDocs -join ', ')" }
