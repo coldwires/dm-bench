@@ -78,6 +78,7 @@ proc
 		// Kept per size so the sweep's ordering can be asserted after it runs.
 		var/list/in_us = list()
 		var/list/assoc_us = list()
+		var/list/find_us = list()
 		// 50 and 500 restored 2026-08-03. They were published, then dropped
 		// during an audit because their harness was not in the tree, and they
 		// are the two points that bracket the crossover where a linear scan
@@ -135,7 +136,7 @@ proc
 			var/t2 = world.tick_usage
 			for(var/i = 1 to reps / UNROLL)
 				X10(flat.Find(needle))
-			MeasureUTU("lists.find_n[n]", "lists", "L.Find(needle), n=[n], worst case",
+			find_us["[n]"] = MeasureUTU("lists.find_n[n]", "lists", "L.Find(needle), n=[n], worst case",
 				world.tick_usage - t2, reps, UNROLL, null)
 
 			var/t3 = world.tick_usage
@@ -152,6 +153,30 @@ proc
 		// The sweep's shape is the published claim, so it is asserted, not left
 		// to a reader comparing four rows by eye. A linear scan must cost more
 		// on a longer list at every step; measured steps are 3x or wider.
+		// A regression tripwire, added 2026-08-03, and the first assertion here
+		// that is EXPECTED to fail on a current build.
+		//
+		// Find() and `in` walk the same list for the same needle in the same
+		// slot, so they should cost about the same. On 516.1673 and earlier
+		// Find lands 1.2 to 1.4x `in`. From 516.1674 onward it is 4 to 5.8x,
+		// bisected across six builds and reproduced on two machines and two
+		// operating systems, while every other list operation, including the
+		// method call L.Copy(), is unchanged.
+		//
+		// 2.5x sits in the empty space between those two populations, far from
+		// either. It is not a tolerance to tune: it separates "these two
+		// operations cost about the same" from "one of them does four times
+		// the work".
+		//
+		// This will read FAIL on 516.1674 and later, and that is the point. A
+		// FAIL here means the engine changed, which is what the assertion half
+		// of this suite is for. If a future build repairs it, this flips back
+		// to PASS and the matrix says so on the day it happens.
+		Assert("lists.find_costs_about_the_same_as_in", "lists",
+			"L.Find() costs about what the equivalent `in` scan costs",
+			(in_us["1000"] > 0 && find_us["1000"] < in_us["1000"] * 2.5) ? 1 : 0, 1,
+			"Find [round(find_us["1000"],0.01)] us vs in [round(in_us["1000"],0.01)] us at n=1000, [round(in_us["1000"] > 0 ? find_us["1000"]/in_us["1000"] : 0, 0.01)]x; regressed in 516.1674")
+
 		// Every step of the sweep, including the two restored sizes. Widening it
 		// is the point of having them: the ordering now has to hold across six
 		// sizes rather than four, so a defect has more places to show.
