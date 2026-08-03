@@ -396,10 +396,40 @@ Crossover is around 10 entries: at 10 the linear search is already the cheaper
 of the two here, and by 100 it has lost. Below the crossover the two are
 equivalent in any way that matters.
 
-`L.Find()` and the miss case were measured by a harness that is not in this
-tree, so the figures once printed here (0.37 and 0.24 µs at n=100) have been
-withdrawn. This suite times the worst case for `in`, which is the needle in
-the last slot.
+### `L.Find()` got about 4x slower between 516.1666 and 516.1685
+
+The one place on this page where the two builds genuinely differ, and the
+reason this suite exists.
+
+| n | `Find()` on 1666 | `Find()` on 1685 |
+|---|---|---|
+| 10 | 0.17 µs | 0.26 µs |
+| 100 | 0.46 µs | 1.48 µs |
+| 1,000 | 3.33 µs | 13.4 µs |
+| 5,000 | 16.1 µs | 66.5 µs |
+
+**Per element the scan goes from 3.19 ns to 13.27 ns.** It is not call
+overhead: at n=10 the gap is 0.09 µs and at n=5,000 it is 50 µs, which is a
+slope change rather than a constant. Measured on two machines and two operating
+systems, three runs per build, at 0 to 1% spread.
+
+**Every control is flat across the same two builds, in the same runs**: `in`
+with the needle in the last slot, `in` with the needle absent, associative
+lookup, list building with `+=`, and `L.Copy()`. That last one is the important
+one, because it is also a list method call, so this is not a change in how
+methods dispatch. Whatever moved is inside the scan.
+
+**What is not known: which build did it.** This suite holds 516.1666 and
+516.1685 and the gap between them is nineteen builds. Nothing here identifies
+the boundary, and no mechanism is offered.
+
+**Practical consequence, on 516.1685:** `Find()` costs about 5.8x what `in`
+costs for the same scan, against 1.4x on 516.1666. If you want a position, it
+is still the only way to get one; if you want a yes or no, `in` is now
+dramatically cheaper, and an associative list is cheaper than either.
+
+`in` with the needle absent costs the same as `in` with the needle in the last
+slot on both builds, which is expected: both walk the entire list.
 
 ---
 
