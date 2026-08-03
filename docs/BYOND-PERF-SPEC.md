@@ -4,56 +4,54 @@ Measured cost of common BYOND operations.
 
 ## Test conditions
 
-- DreamDaemon 516.1666, Windows 11. Single machine, machine drift possible. Ratios hold.
-- Baselines dated 2026-07-31 or later run DreamDaemon at High process priority; earlier figures were normal priority.
-- Sections 1 to 11 and 13 to 14: single machine, no clients connected.
-- Section 12: server on a remote Linux box, clients on a separate machine over the public internet.
-- Sections other than 2 ran at least 1.5s against `world.timeofday` (0.1s resolution). Quantization error under 7% **for a single timed block**. That guard does not cover a difference between two blocks, which is what section 2 is made of; see the note there.
-- Section 2 uses `world.tick_usage`, calibrated per run at 500 to 507 µs per percent of a tick, with median-of-three.
-- Empty loop baseline: 0.07 to 0.08 µs with an accumulator, 0.03 without. The first is removed from accumulator-form rows, the second from the unrolled discarded-result rows.
-- **Every figure on this page was regenerated on 2026-08-01** from three interleaved runs per build of each suite: 52 assertions and 92 measurements for `suite.dme`, 10 and 16 for `suite_del.dme`, 0 failed and 0 unstable everywhere, and every assertion verdict identical across the two builds.
-- **Figures are printed at the precision the harness emits, which is finer than the measurement supports. Read every absolute figure as plus or minus 15% at least.** Two figures whose intervals overlap are one figure: 0.09 and 0.11 do not differ, and a table that lists them in ascending order is not showing a trend. Sections 3 and 5 through 8 carry a reminder in place, because their values are small enough that the printed decimals are the whole of the apparent difference. Ratios between rows measured close together are sounder, since the arms share machine conditions.
+- **Figures come from DreamDaemon 516.1666 on the measuring machine**, a dedicated headless Linux box that runs nothing else, with its CPU frequency clamped to base so thermal state cannot become timing noise. 516.1685 is quoted wherever the two builds differ.
+- **A Windows desktop runs the same suite as a cross-check.** It agrees on every assertion and on every cost outside the io layer, and it appears in this page wherever the two genuinely disagree. It is not the source of the figures, because it is in daily use and cannot be quiesced: its runs agree with each other to about 9%, against about 2% on the measuring machine.
+- Each machine runs in the condition its own qualification measured as best, which is not the same answer on both: raising process priority halves long-row spread on the desktop and does nothing on the dedicated box, where nothing competes for the CPU.
+- Every measured row outside the scheduler is timed with `world.tick_usage`, calibrated per run against a long wall-clock reference at 490 to 520 µs per percent of a tick, after establishing that it is linear to within 2.4% across a 500x range of workload.
+- Empty loop baseline: 0.08 µs with an accumulator, 0.03 without. The first is removed from accumulator-form rows, the second from the unrolled discarded-result rows.
+- Sections 1 to 11 and 13 to 14: no clients connected. Section 12: server on a remote Linux box, clients on a separate machine over the public internet.
+- **Every figure regenerates from three runs per build merged**, medians per row with the observed spread recorded: 52 assertions and 92 measurements for `suite.dme`, 10 and 16 for `suite_del.dme`, 0 failed and 0 unstable on both builds and both machines, and every assertion verdict identical across both builds and both operating systems.
+- **A row that fails a resolution guard is withheld rather than printed.** Two rows in section 2 are withheld on the measuring machine for exactly this reason and say so in place.
+- **Figures are printed at the precision the harness emits, which is finer than the measurement supports.** Repeatability is about 2% on the measuring machine, but that is not the same as accuracy: sub-microsecond rows subtract a calibrated baseline, and values are emitted at two decimals, so a row reading 0.12 cannot express a difference finer than about 8% whatever the machine does. **Do not read 0.12 against 0.13 as a difference.** Ratios between rows measured close together are sounder than absolutes, since the arms share machine conditions.
+- **A ratio only travels when both of its arms are bounded by the same resource.** Computation against computation transfers between machines; buffered logging against an unbuffered file write does not, and section 11b is what that looks like when measured on two operating systems.
 - Where two snippets are claimed equivalent, the harness asserts matching output counts and prints the result.
-- Harnesses: `suite.dme` and `suite_del.dme`. Sections 1 through 10, 11b, 13 and 14 regenerate from them. Figures imported from harnesses absent from this tree are flagged in place and are now confined to: the `extras/respawn.dme` line in section 8, two side observations in section 14, and sections 11 and 12 entire, whose harnesses (`spec_sheet.dme`, `hypotheses.dme`) predate this suite. Several tables lost rows on 2026-08-01 because those rows came from absent harnesses and could not be reproduced; each loss is noted where it happened rather than quietly carried.
+- Harnesses: `suite.dme` and `suite_del.dme`. Sections 1 through 10, 11b, 13 and 14 regenerate from them. Figures imported from harnesses absent from this tree are flagged in place and are now confined to: the `extras/respawn.dme` line in section 8, two side observations in section 14, and sections 11 and 12 entire, whose harnesses (`spec_sheet.dme`, `hypotheses.dme`) predate this suite.
 
-**Regenerated 2026-08-03, and two things changed that a reader should know
-before comparing this page to an older copy.** The Windows baselines were
-retaken as three runs per build after every measured row outside the scheduler
-moved from `world.timeofday` to `world.tick_usage`. First, the ratios in the
-summary table at the bottom are recomputed from those runs, and four moved
-inside the error bar this page already declares: the typed view loop 9.5x to
-8.5x, `range()` against `view()` 2.3x to 2.6x, `loc` against `Move()` 8x to
-about 9x, and the associative lookup at 5,000 entries 81x to 74x. The
-section-by-section tables below still quote the 2026-08-01 figures except in
-§11b, and re-deriving them is outstanding work.
+**Regenerated 2026-08-03, and the figures moved.** Sections 1 through 11b now
+come from the measuring machine rather than the desktop, and every measured row
+outside the scheduler moved from `world.timeofday` to `world.tick_usage` the day
+before. Absolute times therefore differ from any earlier copy of this page,
+mostly downward, since the two machines are not equally fast at everything.
+Ratios moved less: the typed view loop reads 7.8x where it read 9.5x, `loc`
+against `Move()` is unchanged at about 8x, and the associative lookup at 5,000
+entries is 50x where it read 81x. Where a multiple genuinely depends on which
+machine measured it, both are now printed, and sections 2, 7 and 11b are where
+that happens.
 
-Second, **the spread column roughly doubled, from a median of 9% to 18%, and
-that is mostly the instrument getting more honest rather than the engine or
-the suite getting worse.** A 0.1s wall clock cannot express a disagreement
-smaller than its own quantum, so run-to-run variation below that was invisible
-and printed as a tight spread; `world.tick_usage` resolves it. The same effect
-was measured in the other direction on the Linux machine, whose long rows read
-exactly 0% spread until the same conversion. Part of the increase is also that
-the Windows machine is in daily use and cannot be quiesced. Which is why
-**precision figures now come from a dedicated Linux machine**, whose merged
-baselines carry one wide row in 92 against this machine's 22.
+**Repeatability and precision, and the error bar is per machine.** Every
+baseline is three runs merged, median and spread per row. On the measuring
+machine the median row disagrees with itself by about **2%** between runs, one
+row in 92 exceeds 25%, and rows over 10 µs sit near 2%. On the desktop the same
+suite gives about 9%, with 24 rows over 25%. **Neither figure is an accuracy
+claim**: it is how well a machine repeats itself, which is the most a
+repeatability measurement can tell you, and small rows remain limited by
+baseline subtraction and by two-decimal output whatever the machine does.
 
-**Repeatability and precision.** Every baseline is three runs merged, median
-and spread per row. **Absolute figures carry an error bar of at least 15%,
-measured rather than estimated**: rows over 10 µs, where quantization is
-negligible and no baseline is subtracted, still scatter about 15% between
-runs, and the number of rows varying over 25% tracked ambient machine load
-from 11 to 30 of 86 across triples taken the same day. A sub-microsecond
-figure printed to two decimals is formatting, not precision; 0.09 and 0.11 do
-not differ at this scale. Ratios between rows measured close together are
-sounder than absolutes, because the arms share machine conditions. Since
-2026-07-31 baselines run DreamDaemon at High process priority, which halves
-the between-run spread of long rows (18.3% to 9.9% median); spread figures
-are not comparable across priorities. **Section 2 carries its own history**:
-three of its seven assertions once flipped at random across four runs,
-because each figure was a difference between two `world.timeofday` blocks
-one to four clock quanta wide. It was re-derived with `world.tick_usage` and
-median-of-three.
+**Spread figures are not comparable across conditions**, and there are now
+three of those: process priority, sitting, and clock. The last one was learned
+the hard way. A 0.1s wall clock cannot express a disagreement smaller than its
+own quantum, so before the conversion to `world.tick_usage` some rows printed a
+tight spread that meant only "three runs landed in the same quantum". On the
+desktop that made the same suite look four times tighter than it is; on the
+measuring machine it produced long rows reading exactly 0%. A spread column is
+only evidence down to the resolution of what produced it.
+
+**Section 2 carries its own history**: three of its seven assertions once
+flipped at random across four runs, because each figure was a difference
+between two `world.timeofday` blocks one to four clock quanta wide. It was
+re-derived with `world.tick_usage` and median-of-three, and two of its rows are
+withheld today because that same subtraction guard now judges them too noisy on
+a machine fast enough to shrink the difference it was measuring.
 
 **Controls.** Mechanism claims on this page are tested rather than asserted, in `hypotheses.dme`, **which is not in the tree**. The `del()` figures were re-derived in isolated harnesses after the main run proved to contaminate itself; see §2.
 
@@ -68,24 +66,24 @@ Test set: 41 mobs and 400 objs inside `view(7)`. 667 atoms total.
 ### Same output, three ways
 
 ```dm
-var/list/V = view(7, c)                                    // 238 µs   667 atoms
-var/list/V = view(7, c); for(var/mob/M in V) ...           // 275 µs    41 mobs
-for(var/mob/M in view(7, c)) ...                           //  29 µs    41 mobs
-for(var/atom/A in view(7, c)) ...                          // 417 µs   667 atoms
+var/list/V = view(7, c)                                    // 215 µs   667 atoms
+var/list/V = view(7, c); for(var/mob/M in V) ...           // 248 µs    41 mobs
+for(var/mob/M in view(7, c)) ...                           //  27 µs    41 mobs
+for(var/atom/A in view(7, c)) ...                          // 352 µs   667 atoms
 ```
 
-Middle two verified identical at 41 mobs, in all three runs. Ratio **9.5x**.
+Middle two verified identical at 41 mobs, in all three runs. Ratio **7.8x**.
 
-A typed `for(... in view(...))` passes the filter to the engine and skips building the list. Building the list accounts for the cost. The DM-side filter loop adds only about 37 µs on top of the 238 µs build.
+A typed `for(... in view(...))` passes the filter to the engine and skips building the list. Building the list accounts for the cost. The DM-side filter loop adds only about 33 µs on top of the 215 µs build.
 
-The 9.5x figure is specific to 667 atoms in view. Tested against rising clutter with the mob count held at 41:
+The 7.8x figure is specific to 667 atoms in view. Tested against rising clutter with the mob count held at 41:
 
 | Atoms in view | `var/list/V = view(7,c)` | `for(var/mob/M in view(7,c))` | advantage |
 |---|---|---|---|
-| 667 | 250 µs | 26.4 µs | 9.5x |
-| 1,867 | 1,740 µs | 40 µs | 43.5x |
+| 667 | 215 µs | 27.4 µs | 7.8x |
+| 1,867 | 1,548 µs | 40.7 µs | 38.0x |
 
-516.1685 gives 8.8x and 40.4x on the same two points. Materialising the list is superlinear: 2.8x the atoms costs 7.0x the time, while the typed loop grows 1.5x, which confirms it never builds the discarded entries.
+516.1685 gives 7.8x and 35.2x on the same two points. Materialising the list is superlinear: 2.8x the atoms costs 7.3x the time, while the typed loop grows 1.5x, which confirms it never builds the discarded entries. That pair of multiples is what `view.typed_loop_skips_build` asserts, so the mechanism is checked rather than inferred from the timings.
 
 An earlier version of this table ran five clutter levels to 2,647 atoms and reported the advantage as "1.7x empty, 10x typical, 77x crowded". That harness is not in this repository and the finer sweep is not reproducible here, so the table now shows only the two points this suite measures. The shape is unchanged; the endpoints are gone rather than repeated on trust.
 
@@ -94,70 +92,72 @@ An earlier version of this table ran five clutter levels to 2,647 atoms and repo
 ```dm
 var/list/V = view(7, c)
 for(var/mob/M in V) ...
-for(var/obj/O in V) ...                                    // 383 µs
+for(var/obj/O in V) ...                                    // 372 µs
 
 for(var/mob/M in view(7, c)) ...
-for(var/obj/O in view(7, c)) ...                           // 207 µs
+for(var/obj/O in view(7, c)) ...                           // 228 µs
 ```
 
-Verified identical output in all three runs. **Caching a view for reuse is
-slower than running the query twice, on every build and in every run
-measured.** Within-run ratios, three runs per build, both arms timed under
-identical conditions:
+Verified identical output, 441 atoms against 441, in all three runs.
+**Caching a view for reuse is slower than running the query twice, on every
+build, on both machines, and in every run measured.** Medians per build:
 
-| build | per-run ratios | median |
-|---|---|---|
-| 516.1666 | 1.99, 1.85, 1.81 | 1.85x |
-| 516.1685 | 1.84, 1.64, 1.61 | 1.64x |
+| build | cached | re-queried | ratio |
+|---|---|---|---|
+| 516.1666 | 371.6 µs | 228.2 µs | 1.63x |
+| 516.1685 | 368.7 µs | 220.9 µs | 1.67x |
 
-**A build-dependence claim here has been weakened by better data.** An earlier
+**A build-dependence claim here was withdrawn rather than restated.** An early
 sitting reported 2.05x against 1.84x with six of six samples separated, and
-this page stated the ratio per build on that basis. In the current triples the
-distributions overlap: 1666's slowest sample reads 1.81 and 1685's fastest
-reads 1.84. The direction of the medians is the same, so the difference may
-well be real, but it is no longer separated and this page no longer claims it
-as established. What is established, on twelve samples across two sittings, is
-the design rule: re-querying beats caching every time, by 1.6x at worst.
+this page once stated the ratio per build on that basis. Later triples
+overlapped, and on the current machine the two builds sit within 0.04 of each
+other, which is well inside the run-to-run noise of either. There is no
+measured build difference here. What is established, now across two machines,
+two builds and many samples, is the design rule: **re-querying beats caching
+every time, and by at least 1.6x everywhere it has been measured.**
 
 ### Family
 
 ```dm
-for(var/mob/M in view(7, c)) ...                           // 26 to 29 µs
-for(var/mob/M in oview(7, c)) ...                          // 27 µs
-for(var/mob/M in viewers(7, c)) ...                        // 22 µs
-for(var/mob/M in range(7, c)) ...                          // 12 µs
+for(var/mob/M in view(7, c)) ...                           // 27.4 µs
+for(var/mob/M in oview(7, c)) ...                          // 27.1 µs
+for(var/mob/M in viewers(7, c)) ...                        // 23.6 µs
+for(var/mob/M in range(7, c)) ...                          // 14.7 µs
 ```
 
-`view()` is given as a range because this suite times it three times in three
-places, and `view.same_operation_rows_agree` asserts the three agree; they
-land at 26.4, 27.3 and 29.1 µs. The maintained-list comparison that used to
-close this block came from a harness not in this tree and has been withdrawn
-rather than repeated.
+This suite times the `view()` row three times in three places, and
+`view.same_operation_rows_agree` asserts the three agree: they land at 27.37,
+27.40 and 27.35 µs, a ratio of 1.00x. That assertion exists because a divisor
+defect once put those same three rows 1.83x apart.
 
-`view()` computes line of sight, `range()` does not, and it costs **2.3x** more
-on 516.1666 (26.4 against 11.5 µs) and 2.6x on 516.1685. The line-of-sight cost is unconditional
-rather than proportional to how many opaque atoms exist:
+`view()` computes line of sight and `range()` does not, which costs **1.9x**
+here on both builds. **This is one of the few ratios that does not travel
+cleanly between machines**: the Windows desktop reads 2.6x for the same pair,
+because `range()` is measurably cheaper there while `view()` is not. Both
+machines agree on the direction and on the advice; treat the multiple as "in
+the 2x region" rather than as a constant.
+
+The line-of-sight cost is unconditional rather than proportional to how many
+opaque atoms exist:
 
 | Opaque atoms in range | `view(7)` | mobs seen |
 |---|---|---|
-| 0 | 30 µs | 41 |
-| 200 | 22 µs | 9 |
+| 0 | 27 µs | 41 |
+| 200 | 16 µs | 6 |
 
 Adding 200 opaque atoms does not raise the cost; it lowers the count seen, so
-occlusion works (41 mobs down to 9). Both figures come from
+occlusion works (41 mobs down to 6). Both figures come from
 `view.los_cost_is_unconditional` and `view.occlusion_works`, which assert the
-cost does not rise and that occlusion has an effect. The `range()` half of the
-old version of this table used a harness not in this tree and has been
-withdrawn.
+cost does not rise and that occlusion has an effect.
 
 ### Radius
 
 ```dm
-view(1)     1.8 µs
-view(3)     7.1 µs
-view(5)      19 µs
-view(7)      30 µs
-view(10)     47 µs
+view(1)     1.7 µs
+view(3)     7.4 µs
+view(5)     18.3 µs
+view(7)     27.3 µs
+view(10)    39.4 µs
 ```
 
 `view.radius_sweep_monotonic` asserts this ordering, which is why the row that
@@ -175,39 +175,46 @@ once published view(7) above view(10) cannot recur silently.
 > the inherited figures could be checked they fell inside the re-measured
 > ranges.
 >
-> **The population rows are ambient-sensitive and are published as median
-> plus range.** The del() scan is memory-bound, so its per-object cost moves
-> with cache and memory conditions: across three same-morning triples the
-> population rows spread 30 to 65%, with both builds moving together. The
-> shape (superlinear growth, flat null, permanent residual) is stable; the
-> coefficients belong partly to the machine and the moment.
+> **The shape of this section travels between machines. The coefficients do
+> not, and the gap is larger here than anywhere else on the page.** The del()
+> scan is a memory walk, so its slope is a property of a machine's memory
+> subsystem rather than of the engine. Every figure below is from the
+> measuring machine; where the second machine changes a multiple rather than
+> just a magnitude, it is stated.
 
 ### Cost by reference count
 
 Clean world, 400 turfs, live object count held at zero in both arms. Median of
-three, three runs per build, 2026-08-01.
+three runs per build.
 
 | Heap refs on victim | 516.1666 | 516.1685 |
 |---|---|---|
-| 0 | not resolvable | not resolvable |
-| 1 | 10.9 (10.7 to 11.2) µs | 10.4 (10.1 to 10.6) µs |
-| 256 | 13.4 (10.8 to 17.7) µs | 12.3 (10.5 to 16.7) µs |
+| 0 | withheld, below the resolution floor | withheld |
+| 1 | 3.68 (3.63 to 3.70) µs | 4.03 (3.98 to 4.07) µs |
+| 256 | withheld, subtraction noise | withheld |
 
-One heap reference costs about 10 µs. 256 references cost somewhere between
-the same and 1.5x, with the 256-ref arm being the highest-variance quantity
-in this suite. Nearly flat against a 256x change in reference count either
-way; the design guidance is unchanged.
+One heap reference costs about 3.7 µs here. **The 256-reference arm is
+withheld on this machine, and that is the guard working rather than a gap in
+the data.** Its figure is a difference between two timed blocks, and this
+machine deletes fast enough that the difference is no longer large compared
+with the error of the two arms it comes from, so `MeasureDelta()` flags it
+`SUBTRACTION_NOISE`. The slower machine resolves it and reads 13.4 µs against
+10.9 for a single reference, roughly 1.2x, with the widest spread of any row
+in the suite.
 
-The zero-reference case is **not measurable by this harness**. Its signal is 3
-to 8 percent of a tick against a 20 percent floor, so it is flagged
+So the design guidance stands on the cross-check rather than on the primary
+machine: **going from 1 reference to 256 does not multiply the cost**, and
+nothing in either machine's data suggests reference count drives it. The
+zero-reference case is not measurable by either machine; its signal is a few
+percent of a tick against a 20 percent floor, so it is flagged
 `LOW_RESOLUTION` and withheld.
 
 ### The scan runs only for references del cannot see
 
 `del(H[1])`, where the indexed list slot is the victim's only heap reference,
-costs 0.22 to 0.23 µs, the same as the zero-reference case, while `del(e)`
-through a local with the same single reference held elsewhere costs the full
-10 µs. The expensive part of del() is the hunt for references it cannot
+costs 0.27 µs (0.25 to 0.38), the same as the zero-reference case, while
+`del(e)` through a local with the same single reference held elsewhere costs
+the full 3.7 µs. The expensive part of del() is the hunt for references it cannot
 account for from the deletion site. Asserted as
 `del.accounted_ref_is_free`, passing on both builds, so an engine that
 changes this behaviour flips a cell in the matrix.
@@ -215,24 +222,32 @@ changes this behaviour flips a cell in the matrix.
 ### Cost by live object count
 
 Clean world, population grown monotonically. Victim holds one heap reference.
-Median of three runs, with the observed range, 2026-08-01.
+Median of three runs, with the observed range.
 
 | Live objs | 516.1666 | 516.1685 |
 |---|---|---|
-| 0 | 10.9 (10.1 to 11.2) µs | 11.0 (9.8 to 11.9) µs |
-| 50,000 | 94.8 (90 to 107) µs | 115 (112 to 121) µs |
-| 100,000 | 244 (186 to 286) µs | 237 (208 to 291) µs |
-| 200,000 | 1,992 (1,957 to 2,281) µs | 2,162 (2,142 to 2,474) µs |
-| 300,000 | 3,830 (3,628 to 3,887) µs | 3,763 (3,492 to 3,914) µs |
+| 0 | 3.67 (3.62 to 3.71) µs | 4.04 (3.99 to 4.05) µs |
+| 50,000 | 85.9 (85.5 to 87.0) µs | 89.4 (89.3 to 89.8) µs |
+| 100,000 | 182 (167 to 186) µs | 199 (194 to 201) µs |
+| 200,000 | 604 (599 to 617) µs | 668 (663 to 673) µs |
+| 300,000 | 1,090 (1,088 to 1,106) µs | 1,160 (1,156 to 1,162) µs |
 
-Growth is superlinear above 50,000 on both builds: 6x the population from 50k
-to 300k costs about 40x the time. The ranges are wide because the scan is
-memory-bound and tracks ambient machine conditions; the shape held in every
-run, and `del.population_sweep_monotonic` now asserts that ordering rather
-than leaving it to a reader comparing five rows.
+Growth is superlinear above 50,000 on both builds and on both machines, and
+`del.population_sweep_monotonic` asserts that ordering rather than leaving it
+to a reader comparing five rows.
 
-At 300,000 live objs and `tick_lag 0.5`, roughly 13 deletions consume the
-tick.
+**How superlinear is a property of the machine, not of the engine, and this is
+the sharpest example on the page.** Going from 50,000 to 300,000 live objects,
+a 6x increase in population, costs **12.7x** the time here and **40x** on the
+Windows desktop, whose absolute figures at 300,000 are 3,830 µs against this
+machine's 1,090. The scan is a memory walk, so its slope belongs to the cache
+hierarchy and memory bandwidth of whatever is running it. Carry the shape,
+which is that deletion cost climbs faster than population; do not carry either
+coefficient onto your own hardware.
+
+At 300,000 live objs and `tick_lag 0.5`, roughly 46 deletions consume the tick
+here, and roughly 13 on the desktop. Both numbers say the same thing about
+design.
 
 ### Turfs are not counted
 
@@ -240,10 +255,11 @@ Map resized with no objects present, one heap ref on the victim:
 
 | Turfs | 516.1666 | 516.1685 |
 |---|---|---|
-| 10,000 | 11.0 µs | 11.7 µs |
-| 48,400 | 10.7 µs | 10.3 µs |
+| 10,000 | 3.66 µs | 4.01 µs |
+| 48,400 | 3.63 µs | 4.01 µs |
 
-Flat within the ranges above. Turfs do not feed the scan.
+Flat, and at 1 to 2% spread this is now a tight result rather than a plausible
+one. Turfs do not feed the scan.
 
 ### Cumulative allocation does not matter
 
@@ -252,8 +268,8 @@ live count held at zero:
 
 | | 516.1666 | 516.1685 |
 |---|---|---|
-| before the churn | 10.7 µs | 10.5 µs |
-| after 500k allocated and freed | 11.0 µs | 11.3 µs |
+| before the churn | 3.68 µs | 3.99 µs |
+| after 500k allocated and freed | 3.65 µs | 3.98 µs |
 
 Flat. How many objects a server has created over its lifetime is irrelevant;
 only concurrent population counts.
@@ -262,19 +278,22 @@ only concurrent population counts.
 
 | State | 516.1666 | 516.1685 |
 |---|---|---|
-| cold start, 0 live | 10.9 µs | 11.0 µs |
-| grown to 300,000 | 3,830 µs | 3,763 µs |
-| all 300,000 freed | **203 (191 to 232) µs** | **229 (206 to 230) µs** |
+| cold start, 0 live | 3.67 µs | 4.04 µs |
+| grown to 300,000 | 1,090 µs | 1,160 µs |
+| all 300,000 freed | **197.5 (197.3 to 199.7) µs** | **198.8 µs** |
 
 Freeing the population does not restore the cold cost. Whatever structure the
-scan walks grows with peak concurrent live count and never shrinks. A one-off
-population spike raises `del()` cost roughly 19 to 21x for the remaining life
-of the process.
+scan walks grows with peak concurrent live count and never shrinks. **A
+one-off population spike raises `del()` cost about 54x here for the remaining
+life of the process, and about 19x on the desktop.** The residual itself lands
+at nearly the same absolute figure on both machines, 197 µs against 203, which
+is a coincidence of two different slopes rather than a portable constant and
+should not be read as one.
 
 ### Alternative
 
 ```dm
-del(thing)          // ~3,800 µs at 300k live objs (3,500 to 3,900 observed)
+del(thing)          // ~1,090 µs at 300k live objs here, ~3,800 on the desktop
 thing = null        // no scan, no population sensitivity
 ```
 
@@ -297,12 +316,20 @@ section in doubt. Tested directly, three runs on each build:
 
 | id | 516.1666 | 516.1685 |
 |---|---|---|
-| `del.live_0` | 10.9 (10.1 to 11.2) | 11.0 (9.8 to 11.9) |
-| `del.live_200000` | 1,992 (1,957 to 2,281) | 2,162 (2,142 to 2,474) |
-| `del.live_300000` | 3,830 (3,628 to 3,887) | 3,763 (3,492 to 3,914) |
-| `del.residual_after_peak` | 203 (191 to 232) | 229 (206 to 230) |
+| `del.live_0` | 3.67 (3.62 to 3.71) | 4.04 (3.99 to 4.05) |
+| `del.live_200000` | 604 (599 to 617) | 668 (663 to 673) |
+| `del.live_300000` | 1,090 (1,088 to 1,106) | 1,160 (1,156 to 1,162) |
+| `del.residual_after_peak` | 197.5 | 198.8 |
 
-Unchanged: every row overlaps between builds. The superlinear growth and the
+The two builds separate by 6 to 10% on three of these four rows, with 1685 the
+dearer and the observed ranges not overlapping, which the earlier and noisier
+data could not have shown. **It is recorded as an observation and not promoted
+to a claim**, for three reasons: it is one machine, the same rows overlapped
+completely on the desktop, and this project's own rule is that a cross-build
+comparison must interleave its runs within one sitting, which the run order
+behind these triples does not record. A separation this size is exactly what
+non-interleaved sittings have faked here before. The residual row, which does
+not separate, is the useful control sitting right next to it. The superlinear growth and the
 permanent residual are engine characteristics, not defects. Earlier printings
 of this table gave three raw values per cell from a 2026-07-30 pair of
 triples; medians with ranges say the same thing and are comparable with the
@@ -333,10 +360,10 @@ Worst case for `in`: needle is the last element. Baseline removed.
 
 | Entries | `needle in L` | `A[needle]` |
 |---|---|---|
-| 10 | 0.11 µs | 0.11 µs |
-| 100 | 0.34 µs | 0.13 µs |
-| 1,000 | 2.60 µs | 0.15 µs |
-| 5,000 | 13.7 µs | 0.17 µs |
+| 10 | 0.12 µs | 0.15 µs |
+| 100 | 0.33 µs | 0.18 µs |
+| 1,000 | 2.38 µs | 0.20 µs |
+| 5,000 | 11.5 µs | 0.23 µs |
 
 The 50-entry and 500-entry rows in earlier printings came from a harness not
 in this tree and have been dropped rather than carried forward. Both columns
@@ -344,13 +371,15 @@ are asserted: `lists.in_scales_with_size` requires the left column to rise at
 every step, `lists.assoc_stays_flat` requires the right to stay within 3x of
 its smallest value across a 500x change in list size.
 
-Associative lookup is flat. The right-hand column moves 0.09 to 0.14 across a
-500x change in list size, which is inside the plus or minus 15% error bar on
-figures this small: **read that column as one value, not as a slow climb.**
-`in` is linear at roughly 2 ns per element, and its column spans 100x, far
-outside any error bar.
+Associative lookup is flat. The right-hand column moves 0.15 to 0.23 across a
+500x change in list size, a factor of 1.5 where the left column moves 96x.
+**Read the right column as one value, not as a slow climb**, and note that the
+assertion behind it allows 3x precisely so that a genuine O(n) regression would
+break it while this drift does not.
 
-Crossover is 10 to 20 entries. Below that the two are equivalent.
+Crossover is around 10 entries: at 10 the linear search is already the cheaper
+of the two here, and by 100 it has lost. Below the crossover the two are
+equivalent in any way that matters.
 
 `L.Find()` and the miss case were measured by a harness that is not in this
 tree, so the figures once printed here (0.37 and 0.24 µs at n=100) have been
@@ -364,14 +393,14 @@ the last slot.
 100 elements per iteration.
 
 ```dm
-L = list(); L += j                                         // 12.7 µs
-L = new(100); L[j] = j                                     // 16.0 µs
-L = list(); L.Add(j)                                       // 17.3 µs
-L.Copy()                                                   // 1.80 µs
+L = list(); L += j                                         // 13.0 µs
+L = new(100); L[j] = j                                     // 17.3 µs
+L = list(); L.Add(j)                                       // 19.5 µs
+L.Copy()                                                   // 3.20 µs
 ```
 
 Preallocation is slower than `+=`. List growth is already amortised. `.Add()`
-costs 36% more than `+=` here, and 39% on 516.1685.
+costs 50% more than `+=` here, and 48% on 516.1685.
 
 ---
 
@@ -380,24 +409,24 @@ costs 36% more than `+=` here, and 39% on 516.1685.
 Baseline removed.
 
 ```dm
-istype(O, /obj/thing)                                      // 0.10 µs
-O.type == /obj/thing                                       // 0.10 µs
-O.flags & FLAG_A                                           // 0.08 µs
-O.categories["weapon"]                                     // 0.12 µs
-locate(/obj/thing) in O          // 1 item in contents     // 0.16 µs
+istype(O, /obj/thing)                                      // 0.12 µs
+O.type == /obj/thing                                       // 0.12 µs
+O.flags & FLAG_A                                           // 0.11 µs
+O.categories["weapon"]                                     // 0.17 µs
+locate(/obj/thing) in O          // 1 item in contents     // 0.18 µs
 ```
 
 istype is also flat across tree depth and relatedness, which is the claim
-`dispatch.istype_flat` tests: 0.11 µs at depth 1, depth 8, depth 8 against a
-depth-1 ancestor, and an unrelated-branch miss, all four identical. Its
-control, `typesof()` on mob types, does still scale (0.41 against 0.29 µs),
+`dispatch.istype_flat` tests: 0.124 µs at depth 1, 0.124 at depth 8, 0.136 at
+depth 8 against a depth-1 ancestor and 0.126 for an unrelated-branch miss. Its
+control, `typesof()` on mob types, does not stay flat (0.464 against 0.267 µs),
 so the harness is not simply reporting everything as flat.
 
-Spread is 0.05 µs across all five, against a per-figure error of at least 15%,
-which at this scale is roughly 0.02 µs. **The five are one value.** The order
-they are printed in is not a ranking, and no reading of this table supports
-preferring one form over another. Dispatch strategy is a design decision, not a
-performance one.
+Spread is 0.07 µs across all five. **Treat the first three as one value**, and
+note that the two lookup forms at the bottom sit slightly above them here on
+both builds and on the second machine, which is a consistent direction rather
+than noise, but amounts to about 60 nanoseconds. No design decision should turn
+on that. Dispatch strategy is a design decision, not a performance one.
 
 ---
 
@@ -410,41 +439,38 @@ floor: one significant figure at best.
 
 ```dm
 GlobalProc()                     // empty proc             // 0.18 µs
-D.Method()                       // empty datum method     // 0.20 µs
-D.Method()                       // sets . = 1             // 0.24 µs
-UserProc(a)                      // 1 arg                  // 0.19 µs
-UserProc(a, ..., h)              // 8 args                 // 0.32 µs
-abs(x)                           // hard builtin           // 0.02 µs
-max(a, b)                        // hard builtin           // 0.06 µs
-V.Dot(W)                         // soft-called builtin    // 0.10 µs
+D.Method()                       // empty datum method     // 0.22 µs
+D.Method()                       // sets . = 1             // 0.27 µs
+UserProc(a)                      // 1 arg                  // 0.21 µs
+UserProc(a, ..., h)              // 8 args                 // 0.39 µs
+abs(x)                           // hard builtin           // 0.03 µs
+max(a, b)                        // hard builtin           // 0.09 µs
+V.Dot(W)                         // soft-called builtin    // 0.12 µs
 acc += local_var                 // BASELINE_HEAVY         // 0.02 µs
-acc += global_var                // BASELINE_HEAVY         // 0.04 µs
-acc += world.time                // BASELINE_HEAVY         // 0.05 µs
-acc += D.x                       // BASELINE_HEAVY         // 0.11 µs
+acc += global_var                // BASELINE_HEAVY         // 0.02 µs
+acc += world.time                // BASELINE_HEAVY         // 0.07 µs
+acc += D.x                       // BASELINE_HEAVY         // 0.13 µs
 ```
 
 **The four variable-read rows are at the instrument's floor and are flagged
 for it.** They keep an accumulator, because the compiler eliminates a
 discarded pure read outright, so what is subtracted from them is a large share
-of what they measure. On 516.1685 `vars.local` and `vars.global` came out at
-or below the empty-loop cost entirely and are withheld there rather than
-printed as a number. Read them as "too small for this instrument to separate,
-and under 0.1 µs", not as four distinct values.
+of what they measure. Read them as "too small for this instrument to separate,
+and under 0.15 µs", not as four distinct values. On the second machine two of
+them fall to or below the empty-loop cost and are withheld entirely.
 
-**Read this block at plus or minus 15%**, which is 0.03 µs on most of these
-rows. The four call rows at 0.18 to 0.24 are one value; the 8-argument row at
-0.32 and the builtins at 0.02 and 0.06 are genuinely apart from it.
+A proc call is **0.18 to 0.27 µs**, and each argument adds about 0.026. **A
+hard-called builtin is nearly free**: `abs()` at 0.026 µs is about an eighth
+of a one-argument user proc, a measured ratio of 8.0x, with a soft-called
+builtin between them at 0.12. An earlier figure near 0.1 µs for `abs` was
+mostly harness, the accumulator and its branch; the discarded-unroll
+conversion removed both.
 
-A proc call is 0.18 to 0.24 µs, and each argument adds about 0.019. **A
-hard-called builtin is nearly free**: `abs()` at 0.02 µs is about a tenth of
-a user proc (measured ratio 9.5x), with a soft-called builtin between them
-at 0.10. An earlier figure near 0.1 µs for `abs` was mostly harness, the
-accumulator and its branch; the discarded-unroll conversion removed both and
-the figure moved on 2026-07-31.
-
-Datum variable access is above a local, 0.11 against 0.02, but both are inside
-the flagged band described above, so treat that as a direction rather than a
-measured multiple.
+The four plain call rows at 0.18 to 0.27 are close enough to treat as one
+value; the 8-argument row at 0.39 and the two hard builtins are genuinely
+apart from it. Datum variable access is above a local, 0.13 against 0.02, but
+both are inside the flagged band described above, so treat that as a direction
+rather than as a measured multiple.
 
 At `tick_lag 0.5` this allows roughly 250,000 proc calls per tick.
 
@@ -455,15 +481,23 @@ At `tick_lag 0.5` this allows roughly 250,000 proc calls per tick.
 Baseline removed.
 
 ```dm
-s = "[a][b]"                     // embed                  // 0.35 µs
-s = a + b                        // concat                 // 0.35 µs
-num2text(i)                                                // 1.05 µs
-findtext(hay, "lazy")            // 43-char haystack       // 2.35 µs
+s = "[a][b]"                     // embed                  // 0.31 µs
+s = a + b                        // concat                 // 0.28 µs
+findtext(hay, "lazy")            // 43-char haystack       // 0.38 µs
+num2text(i)                                                // 0.59 µs
 ```
 
-`findtext` is the most expensive routine operation listed here. At plus or
-minus 15%, embed and concat are one value; `num2text` and `findtext` are
-separated from them by more than the error bar and from each other.
+Embed, concat and `findtext` are one value at this scale; `num2text` is
+roughly twice any of them.
+
+**`findtext` is where the two machines disagree most outside the io layer, and
+the ordering flips.** It costs 1.76 µs on the Windows desktop, where it is the
+most expensive routine string operation by a wide margin and dearer than
+`num2text`, against 0.38 µs here, where it is the cheapest of the four. A
+4.6x gap on a row that is pure computation, reproduced on a third environment,
+points at the platform's string search rather than at either machine. If your
+code leans on `findtext` in a hot path, measure it on the operating system you
+deploy on; this is not a figure to carry across.
 
 ---
 
@@ -472,25 +506,23 @@ separated from them by more than the error bar and from each other.
 Discarded-unroll instrument, three High-priority runs merged, 2026-07-31.
 
 ```dm
-new /datum                                                 // 0.21 µs
-new /datum/holder                // 1 var, 2 procs         // 0.25 µs
-new /obj                                                   // 0.57 µs
-new /mob                                                   // 0.57 µs
+new /datum                                                 // 0.25 µs
+new /datum/holder                // 1 var, 2 procs         // 0.26 µs
+new /obj                                                   // 0.46 µs
+new /mob                                                   // 0.48 µs
 ```
 
-**A blank `/mob` and a blank `/obj` are indistinguishable**: 0.57 µs each,
-spreads 5 and 9%. This conclusion moved twice in one day and the history
-matters. The original equivalence claim was withdrawn in the morning because
-the accumulator-form instrument read the mob 10 to 22% above the obj, same
-direction in every run. The discarded-unroll conversion then removed the
-accumulator, and the difference went with it: it belonged to the harness,
-not the type. 516.1685 gives the same verdict, 0.49 and 0.55 with
-overlapping ranges.
+**A blank `/mob` and a blank `/obj` are indistinguishable**: 0.46 and 0.48 µs,
+and 0.46 and 0.47 on 516.1685. This conclusion moved twice in one day and the
+history matters. The original equivalence claim was withdrawn once because the
+accumulator-form instrument read the mob 10 to 22% above the obj, in the same
+direction in every run. The discarded-unroll conversion removed the
+accumulator and the difference went with it: it belonged to the harness, not
+to the type. Two machines and two builds now agree.
 
-The step that is real is datum to obj, 0.21 to 0.57, a type distinction with
-no vars added. That gap is 2.7x and survives the error bar comfortably. One
-var on a datum adds nothing meaningful, 0.21 against 0.25, and at plus or
-minus 15% nothing under about 0.04 µs here could be called a difference.
+The step that is real is datum to obj, 0.25 to 0.46, a type distinction with
+no vars added. That gap is 1.8x and survives on both machines. One var on a
+datum adds nothing measurable, 0.25 against 0.26.
 
 A mob with 30 vars and 3 lists measured 2.6 µs by the unported respawn
 harness; indicative only, per the harness note at the top of this page.
@@ -502,14 +534,15 @@ harness; indicative only, per the harness note at the top of this page.
 Baseline removed. Three High-priority runs merged, 2026-07-31.
 
 ```dm
-M.loc = T                        // direct                 // 0.33 µs
-M.Move(T)                        // Enter/Exit chain       // 2.70 µs
-M.Move(T)                        // all 4 callbacks overridden // 3.98 µs
+M.loc = T                        // direct                 // 0.28 µs
+M.Move(T)                        // Enter/Exit chain       // 2.17 µs
+M.Move(T)                        // all 4 callbacks overridden // 3.42 µs
 ```
 
-`loc` assignment is about **8x** cheaper than `Move()`, identical on both
-builds. Overriding the callbacks, which is what real codebases do, costs 47%
-over the plain path.
+`loc` assignment is about **8x** cheaper than `Move()`: 7.7x on 516.1666 and
+8.6x on 516.1685 here, 9.6x and 8.2x on the second machine. Overriding the
+callbacks, which is what real codebases do, costs a further 58% over the plain
+path.
 
 Callback counts verified by overriding all four on a turf type:
 
@@ -581,34 +614,37 @@ Polling costs 9.2 to 9.6x event-driven notification and peaks near half the tick
 printings (313, 351, 330 and 5.9 µs) came from a harness not in this tree.
 
 ```dm
-file << "short line"            // 190 us   median of 3 passes
-file << "1000-char line"        // 210 us   median of 3 passes
-file << "line with [value]"     // 207 us   includes string building
-world.log << "short line"       // 4.5 us
+file << "short line"            // 8.5 us    median of 3 passes
+file << "1000-char line"        // 10.0 us   median of 3 passes
+file << "line with [value]"     // 9.3 us    includes string building
+world.log << "short line"       // 1.9 us
 ```
 
-**A direct file write costs about 190 us on Windows.** That is roughly 1,000
-proc calls, and at `tick_lag 0.5` about 260 of them consume the entire tick.
-Writing to a file per game event is not viable there.
+**This is the one section where the platform decides the design advice, not
+just the number.** A direct file write costs about **8.5 us on Linux and 190
+us on Windows**, and the two lead to different conclusions from the same
+engine. At `tick_lag 0.5`, roughly 5,900 short file writes fill a tick on
+Linux against about 260 on Windows. Logging every game event to a file is
+merely expensive on one platform and completely unaffordable on the other.
 
-**`world.log` is ~46x cheaper on Windows** at 4.2 us, because it goes to
-buffered stdout rather than an unbuffered flush.
+**`world.log` is cheaper than a direct write everywhere**, because it goes to
+buffered stdout rather than an unbuffered flush: 1.9 us here, 4.2 us on
+Windows. But the advantage it buys is **4.4x on Linux and 45.9x on Windows**,
+because the arm it is being compared against is what moves.
 
-**That multiple is not a property of the engine, and this is the one place on
-this page where the operating system changes the advice.** Measured on both
-machines, same suite, same clock, three runs each:
+Measured on both machines, same suite, same clock, three runs each:
 
-| | windows | linux |
+| | linux | windows |
 |---|---|---|
-| `file << "short line"` | 190.5 µs | 8.51 µs |
-| `world.log << "short line"` | 4.15 µs | 1.92 µs |
-| advantage of `world.log` | **45.9x** | **4.4x** |
+| `file << "short line"` | 8.51 µs | 190.5 µs |
+| `world.log << "short line"` | 1.92 µs | 4.15 µs |
+| advantage of `world.log` | **4.4x** | **45.9x** |
 
-A direct file write is about 22x cheaper on Linux, so the gap it opens over
-`world.log` mostly closes. The direction survives on both, which is what the
-advice rests on; the magnitude does not travel, and neither would any ratio
-whose two arms are bounded by different resources. Buffered stdout against an
-unbuffered syscall is exactly such a pair.
+The direction survives on both, which is what the advice rests on. The
+magnitude does not travel, and neither would any ratio whose two arms are
+bounded by different resources: buffered stdout against an unbuffered syscall
+is exactly such a pair. Everything else on this page is computation against
+computation, which is why this is the only section carrying a platform column.
 
 **The binding matters as much as the platform.** `world.log` goes to stdout,
 so what stdout *is* decides its cost. Bound to a file handle rather than
@@ -620,8 +656,8 @@ shape rather than the coefficient. The Linux figures above were taken with
 stdout bound to a file, which is recorded in that baseline rather than
 assumed.
 
-**Cost is per call, not per byte.** 1000 characters costs 11% more than 10,
-despite 100x the data. Batching many lines into a single write is therefore
+**Cost is per call, not per byte.** 1000 characters costs 17% more than 10,
+despite 100x the data, and the same holds on the second machine. Batching many lines into a single write is therefore
 nearly free per additional line, and is the correct fix if you need volume.
 Two assertions hold this down: `io.write_cost_is_per_call_not_per_byte`
 requires the long write to stay under 2x the short one, and
@@ -865,14 +901,14 @@ builds, and each names the section it comes from.
 
 | Rule | Ratio | From |
 |---|---|---|
-| `for(var/mob/M in view())` instead of assigning `view()` to a var | 8.5x at 667 atoms, 41.3x at 1,867 | §1 |
-| Re-query `view()` instead of caching for two passes | 1.85x on 1666, 1.70x on 1685, and every sample so far favours re-querying | §1 |
-| `range()` instead of `view()` when line of sight is not needed | 2.6x | §1 |
-| `loc =` instead of `Move()` when callbacks are not needed | about 9x, 8.2 to 9.6x across the two builds | §9 |
-| Associative list instead of `in` at 5,000 entries | 74x | §3 |
-| `+=` instead of `.Add()` for list building | 1.4x | §4 |
-| `world.log` instead of a direct file write | 45.9x on Windows, 4.4x on Linux; platform-conditional, and only when stdout is not a file | §11b |
-| Dropping the last reference instead of `del()` at 300k live objects | `del()` alone costs 3,800 µs; the ratio is not quoted, see §2 | §2 |
+| `for(var/mob/M in view())` instead of assigning `view()` to a var | 7.8x at 667 atoms, 38x at 1,867 | §1 |
+| Re-query `view()` instead of caching for two passes | 1.6x on 1666, 1.7x on 1685, and every sample on both machines favours re-querying | §1 |
+| `range()` instead of `view()` when line of sight is not needed | 1.9x here, 2.6x on the desktop | §1 |
+| `loc =` instead of `Move()` when callbacks are not needed | about 8x, 7.7 to 9.6x across two builds and two machines | §9 |
+| Associative list instead of `in` at 5,000 entries | 50x here, 74x on the desktop | §3 |
+| `+=` instead of `.Add()` for list building | 1.5x | §4 |
+| `world.log` instead of a direct file write | 4.4x here, 45.9x on Windows; platform-conditional, and only when stdout is not a file | §11b |
+| Dropping the last reference instead of `del()` at 300k live objects | `del()` alone costs 1,090 µs here and 3,830 on the desktop; the ratio is not quoted, see §2 | §2 |
 
 Two rules were dropped from this table on 2026-08-01 rather than restated:
 "push from the event instead of polling", whose 9.2 to 9.6x comes from the
