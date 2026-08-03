@@ -81,10 +81,16 @@ The 7.8x figure is specific to 667 atoms in view. Tested against rising clutter 
 
 | Atoms in view | `var/list/V = view(7,c)` | `for(var/mob/M in view(7,c))` | advantage |
 |---|---|---|---|
-| 667 | 215 µs | 27.4 µs | 7.8x |
-| 1,867 | 1,548 µs | 40.7 µs | 38.0x |
+| 667 | 214 µs | 27.2 µs | 7.9x |
+| 967 | 433 µs | 30.1 µs | 14.2x |
+| 1,867 | 1,560 µs | 41.8 µs | 36.1x |
+| 2,667 | 3,217 µs | 54.5 µs | 62x |
 
-516.1685 gives 7.8x and 35.2x on the same two points. Materialising the list is superlinear: 2.8x the atoms costs 7.3x the time, while the typed loop grows 1.5x, which confirms it never builds the discarded entries. That pair of multiples is what `view.typed_loop_skips_build` asserts, so the mechanism is checked rather than inferred from the timings.
+516.1685 tracks it within a few percent at every level. `view.clutter_advantage_rises` asserts that the advantage widens at every step, which two points could never have shown: two points establish that a gap exists, four establish that it grows with clutter, and growing with clutter is the actual claim.
+
+Materialising the list is superlinear: 4x the atoms costs 15x the time, while the typed loop grows 2x, which confirms it never builds the discarded entries. `view.typed_loop_skips_build` asserts that pair of multiples, so the mechanism is checked rather than inferred from the timings.
+
+An earlier printing of this table gave "1.7x empty, 10x typical, 77x crowded" from a harness that is not in this repository, and it was cut to two points during an audit. The sweep was rebuilt on 2026-08-03 and reaches 62x at 2,667 atoms on the measuring machine and 77.8x on the desktop, so the withdrawn figure was sound; what it lacked was somewhere to come from.
 
 An earlier version of this table ran five clutter levels to 2,647 atoms and reported the advantage as "1.7x empty, 10x typical, 77x crowded". That harness is not in this repository and the finer sweep is not reproducible here, so the table now shows only the two points this suite measures. The shape is unchanged; the endpoints are gone rather than repeated on trust.
 
@@ -131,9 +137,30 @@ This suite times the `view()` row three times in three places, and
 27.40 and 27.35 µs, a ratio of 1.00x. That assertion exists because a divisor
 defect once put those same three rows 1.83x apart.
 
-A comparison against a manually maintained list of atoms used to close this
-block, and was withdrawn in an earlier audit because its harness is not in
-this repository. It has not been rebuilt.
+### Keeping your own list instead of asking the engine
+
+Rebuilt 2026-08-03, having been withdrawn in an earlier audit. Both arms
+iterate the identical set, which `view.maintained_equivalence` confirms at 41
+mobs against 41 before either timing is allowed to mean anything.
+
+```dm
+for(var/mob/M in view(7, c)) ...        // 27.2 µs   the query
+for(var/mob/M in my_list) ...           //  5.8 µs   your own list
+my_list -= M; my_list += M              //  0.25 µs  recording one move
+```
+
+**Reading your own list is about 4.7x cheaper than querying.** That is the
+number usually quoted, and on its own it is misleading, because a maintained
+list is not free: something has to keep it correct.
+
+**The break-even is about 85 moves per read.** An atom may move roughly 85
+times between two reads before querying becomes the cheaper option. Most
+designs read far more often than that, which is why the advice holds, but it
+holds for a reason with a number behind it rather than because lists are
+"faster than view".
+
+This is the same discipline §2 needed: publishing the read without the update
+would be quoting a numerator with no denominator.
 
 `view()` computes line of sight and `range()` does not, which costs **1.9x**
 here on both builds. **This is one of the few ratios that does not travel
@@ -312,13 +339,29 @@ del(thing)          // ~1,090 µs at 300k live objs here, ~2,560 on the desktop
 thing = null        // no scan, no population sensitivity
 ```
 
-**The multiple is not quoted, and that is deliberate.** Earlier versions of
-this page put the ratio at "up to 3,300x" and then "about 3,000x", against a
-`thing = null` arm of "about 1 µs" that came from a harness not in this tree.
-This suite measures the `del()` side, at any population, and uses dropping the
-reference as the control arm inside each measurement, but it publishes no
-standalone row for the control, so the denominator of that ratio has never
-been measured here. What is measured is the numerator: **deletion at 300,000
+**The denominator exists as of 2026-08-03.** Every del figure on this page is a
+difference between two timed loops, one calling `del()` and one dropping the
+reference, and the second was being measured all along without ever being
+printed. It is now published as `del.drop_control_1ref`:
+
+| | 516.1666 | 516.1685 |
+|---|---|---|
+| allocate, build 1 heap ref, drop both, **no** `del()` | 1.04 µs | 1.03 µs |
+| the same with `del()`, net of that control | 3.68 µs | 3.97 µs |
+
+Note what the control includes, because the name matters: allocation is
+unavoidable, since there is nothing to drop without first making it. So this is
+not the cost of `thing = null` in isolation, it is the cost of the whole
+control arm, and quoting it as anything else would repeat the mistake being
+corrected.
+
+With both halves measured, the comparison can finally be stated honestly.
+Against that 1.04 µs control, `del()` costs about **4.5x** at zero population
+and, at 300,000 live objects where it reads 1,083 µs, about **1,040x**. Earlier
+versions of this page said "up to 3,300x" and then "about 3,000x" against a
+denominator that had never been measured here at all.
+
+What is measured is the numerator: **deletion at 300,000
 live objects costs about 3,800 µs and dropping the last reference does not
 scale with population at all.** The design advice is unchanged and now rests
 only on figures this repository can reproduce.
@@ -569,12 +612,27 @@ The step that is real is datum to obj, 0.25 to 0.46, a type distinction with
 no vars added. That gap is 1.8x and survives on both machines. One var on a
 datum adds nothing measurable, 0.25 against 0.26.
 
-A figure for a mob carrying 30 vars and 3 lists was withdrawn on 2026-08-03.
-It came from a harness that is not in this repository, and it could not have
-settled the question it was quoted for anyway: a mob with both cannot separate
-the cost of declaring vars from the cost of initialising lists, which is the
-distinction worth measuring. Splitting it into 30-vars-no-lists against
-3-lists-no-vars would answer it.
+### Declaring vars is free. Initialising them is not
+
+A figure for "a mob with 30 vars and 3 lists" was published here for months
+from a harness that is not in this repository. It could never have settled the
+question it was quoted for, because carrying both at once cannot separate
+declaring a var from running an initialiser. Split on 2026-08-03:
+
+```dm
+new /datum                                                 // 0.25 µs
+new /datum   + 30 declared vars, none initialised          // 0.25 µs
+new /datum   + 3 vars initialised to list()                // 1.14 µs
+```
+
+**Thirty bare vars cost nothing measurable.** Three list initialisers cost
+**4.6x a plain datum**, and that cost is paid per instance, forever.
+`alloc.initialisers_cost_more_than_bare_vars` asserts the ordering so it cannot
+quietly reverse.
+
+The practical form: a type carrying many declared vars is cheap to instantiate,
+and one carrying a handful of `= list()` initialisers is not. If instances are
+created in bulk, initialise lazily rather than in the declaration.
 
 ---
 
@@ -884,12 +942,19 @@ assert; 23 and 24 are the boundary and are the two that are tested.
 
 `n + 1 == n` first holds at n = 16,777,216. 16,777,217 is not representable and rounds down.
 
-Above the bound, string interpolation has been observed switching to
-scientific notation, so `"[16777218]"` reads as `1.67772e+07` rather than as
-digits. **Withdrawn as a figure**, because the harness that produced it is not
-in this repository. It is recorded here as a thing to watch for rather than as
-something this project has measured, and it is a straightforward assertion for
-whoever adds it.
+Above the bound, string interpolation switches to scientific notation:
+
+```dm
+"[16777216]"                    // "16777216"
+"[16777218]"                    // "1.67772e+07"
+```
+
+Asserted since 2026-08-03 as `numeric.num2text_scientific_above_bound`, with
+`numeric.num2text_plain_at_bound` as its control, because a build that changed
+number formatting wholesale would otherwise pass both. The consequence is not
+arithmetic, it is text: a value that is still exactly representable stops
+rendering as digits, so anything writing an id, a savefile key or a log line
+through interpolation changes format partway up the range.
 
 ### Loops past the bound do not terminate
 
@@ -938,10 +1003,16 @@ Shifting past bit 23 produces a mask of **zero**, not a large number. A flag def
 
 ### Reserved words
 
-Withdrawn 2026-08-03. This section stated that `as` cannot be used as a
-variable name. The observation came from a harness that is not in this
-repository, and it is compile-time behaviour that no runtime assertion here
-could cover, so it is removed rather than carried on trust.
+`as` cannot be used as a variable name. `var/list/as = list()` fails to compile
+with "missing left-hand argument to =".
+
+This is compile-time behaviour, so no runtime assertion in this suite can reach
+it. It is backed instead by `extras/compile-probes/reserved-as.dme`, a file
+that **must fail to compile**, carrying an ordinary variable name beside the
+reserved one as its control so that a failure proves something about `as`
+rather than about the probe. Verified on 516.1666 and 516.1685. A build on
+which that file compiles cleanly has un-reserved the word, and success there is
+the finding.
 
 ---
 
