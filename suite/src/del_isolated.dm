@@ -115,6 +115,30 @@ proc
 		var/one = o[1]
 		var/many = m[1]
 
+		// The denominator, published for the first time on 2026-08-03.
+		//
+		// Every del figure on the page is a difference, DelArm minus DropArm,
+		// and the drop side was measured all along without ever being printed.
+		// That left the most quoted claim this project ever made, del() against
+		// dropping the last reference, with a numerator and no denominator, so
+		// the ratio could not honestly be stated at all.
+		//
+		// NEITHER ARM IS TOUCHED. DelOnce already returns both, and this reads
+		// the value it returns. That matters because the DelArm/DropArm pair is
+		// the one artifact here that has passed external cold review, and the
+		// contract above DropArm says changing either arm re-opens it. Reading
+		// a number that was already being computed does not.
+		//
+		// Name it for what the arm actually does, which is NOT "thing = null"
+		// on its own: the loop allocates an object, builds a list of nrefs
+		// references to it, then drops both. Allocation is unavoidable, since
+		// there is nothing to drop without it. Published as the whole control,
+		// so the ratio it anchors is a ratio between two things that were both
+		// measured rather than between one measurement and a remembered figure.
+		MeasureTU("del.drop_control_1ref", "del",
+			"allocate, build 1 heap ref, drop both, no del()",
+			o[3], 60000, 0, "the control arm every del row subtracts")
+
 		Assert("del.zero_refs_is_free", "del",
 			"del() is free when only a local points at the victim",
 			(zero < 2) ? 1 : 0, 1, "[round(zero, 0.01)] us")

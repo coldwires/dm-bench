@@ -21,6 +21,28 @@ datum/pc_holder
 		NoopDot()
 			. = 1
 
+// Two types that isolate what allocation actually pays for. A figure for "a
+// mob with 30 vars and 3 lists" was published for months and withdrawn on
+// 2026-08-03, and it could never have settled the question it was quoted for:
+// carrying both at once cannot separate the cost of declaring vars from the
+// cost of running an initialiser. These split it.
+//
+// pc_vars30 declares thirty vars and initialises none of them. pc_lists3
+// declares three and gives each a list initialiser, which is the case the
+// claim is actually about: an init proc runs per instance, a bare declaration
+// is expected not to.
+datum/pc_vars30
+	var
+		v1; v2; v3; v4; v5; v6; v7; v8; v9; v10
+		v11; v12; v13; v14; v15; v16; v17; v18; v19; v20
+		v21; v22; v23; v24; v25; v26; v27; v28; v29; v30
+
+datum/pc_lists3
+	var
+		list/a = list()
+		list/b = list()
+		list/c = list()
+
 obj/pc_thing
 	var
 		flags = 0
@@ -56,7 +78,13 @@ proc
 		// Kept per size so the sweep's ordering can be asserted after it runs.
 		var/list/in_us = list()
 		var/list/assoc_us = list()
-		for(var/n in list(10, 100, 1000, 5000))
+		// 50 and 500 restored 2026-08-03. They were published, then dropped
+		// during an audit because their harness was not in the tree, and they
+		// are the two points that bracket the crossover where a linear scan
+		// stops beating an associative lookup. Dropping the sizes either side
+		// of the answer, from a sweep that exists to locate it, was the wrong
+		// call.
+		for(var/n in list(10, 50, 100, 500, 1000, 5000))
 			var/list/flat = list()
 			var/list/amap = list()
 			for(var/i = 1 to n)
@@ -67,7 +95,11 @@ proc
 			// small-n reps rose 15M to 20M with the discarded-unroll
 			// conversion: dropping the accumulator made the blocks faster and
 			// 15M would sit at the MIN_DS edge.
-			var/reps = (n >= 1000) ? (3000000 / (n / 1000)) : 20000000
+			// Threshold moved from 1000 to 500 when n=500 was restored: at 20M
+			// reps a 500-element scan runs about half a minute, which is four
+			// times what any other row in this sweep costs. The formula below
+			// it is unchanged, so no existing row's rep count moves.
+			var/reps = (n >= 500) ? (3000000 / (n / 1000)) : 20000000
 
 			// Discarded-unroll, endorsed by differential compilation: a
 			// discarded `in` and a discarded assoc index are both emitted, 16
@@ -86,6 +118,31 @@ proc
 				X10(amap[needle])
 			assoc_us["[n]"] = MeasureUTU("lists.assoc_n[n]", "lists", "A\[needle\], n=[n]",
 				world.tick_usage - t1, 20000000, UNROLL, null)
+
+			// Two rows restored 2026-08-03. Both were published for months from
+			// a harness that is not in this tree and were withdrawn during the
+			// audit; they cost one loop each, so withdrawing them was the wrong
+			// trade. Same needle, same list, same instrument as the row above,
+			// which is what makes them comparable to it at all.
+			//
+			// Find() returns a position rather than a boolean and is the form
+			// people reach for when they want the index. The miss is the other
+			// half of the worst case: `in` on a needle that is not there has to
+			// walk the whole list, exactly like the last-slot hit, so the two
+			// should agree and any gap between them is the cost of the early
+			// exit that a hit gets and a miss does not.
+			var/miss = "absent"
+			var/t2 = world.tick_usage
+			for(var/i = 1 to reps / UNROLL)
+				X10(flat.Find(needle))
+			MeasureUTU("lists.find_n[n]", "lists", "L.Find(needle), n=[n], worst case",
+				world.tick_usage - t2, reps, UNROLL, null)
+
+			var/t3 = world.tick_usage
+			for(var/i = 1 to reps / UNROLL)
+				X10(miss in flat)
+			MeasureUTU("lists.in_miss_n[n]", "lists", "needle in L, n=[n], not present",
+				world.tick_usage - t3, reps, UNROLL, null)
 			#pragma pop
 
 #ifdef BREAKCHECK
@@ -95,10 +152,14 @@ proc
 		// The sweep's shape is the published claim, so it is asserted, not left
 		// to a reader comparing four rows by eye. A linear scan must cost more
 		// on a longer list at every step; measured steps are 3x or wider.
+		// Every step of the sweep, including the two restored sizes. Widening it
+		// is the point of having them: the ordering now has to hold across six
+		// sizes rather than four, so a defect has more places to show.
 		Assert("lists.in_scales_with_size", "lists",
 			"linear search cost rises at every list size",
-			(in_us["10"] < in_us["100"] && in_us["100"] < in_us["1000"] && in_us["1000"] < in_us["5000"]) ? 1 : 0, 1,
-			"10:[round(in_us["10"],0.01)] 100:[round(in_us["100"],0.01)] 1000:[round(in_us["1000"],0.01)] 5000:[round(in_us["5000"],0.01)] us")
+			(in_us["10"] < in_us["50"] && in_us["50"] < in_us["100"] && in_us["100"] < in_us["500"] \
+				&& in_us["500"] < in_us["1000"] && in_us["1000"] < in_us["5000"]) ? 1 : 0, 1,
+			"10:[round(in_us["10"],0.01)] 50:[round(in_us["50"],0.01)] 100:[round(in_us["100"],0.01)] 500:[round(in_us["500"],0.01)] 1000:[round(in_us["1000"],0.01)] 5000:[round(in_us["5000"],0.01)] us")
 
 		// The other half of the same claim, and the one the design advice rests
 		// on. 3x, against a measured 1.5 to 1.6x across six runs: the assoc
@@ -380,10 +441,28 @@ proc
 	// ---------------- allocation ----------------
 
 	Suite_Alloc()
-		AllocOne("alloc.datum", /datum, 10000000)
+		var/plain = AllocOne("alloc.datum", /datum, 10000000)
 		AllocOne("alloc.datum_holder", /datum/pc_holder, 10000000)
 		AllocOne("alloc.obj", /obj, 4000000)
 		AllocOne("alloc.mob", /mob, 4000000)
+
+		// Restored 2026-08-03, split into the two causes the withdrawn figure
+		// conflated. Fewer reps than the plain datum because list initialisers
+		// allocate three lists per instance and the block would otherwise run
+		// long; the rows stay comparable because MeasureUTU divides by the
+		// count it was given and every count here is named once.
+		var/vars30 = AllocOne("alloc.datum_30vars", /datum/pc_vars30, 4000000)
+		var/lists3 = AllocOne("alloc.datum_3lists", /datum/pc_lists3, 1000000)
+
+		// The claim: unassigned vars are free per instance, and initialisers
+		// are what cost. An ordering assertion, so it needs no tolerance and
+		// cannot flip on noise. If thirty bare vars ever start costing more
+		// than three list initialisers, either the engine changed or this
+		// harness stopped measuring what it thinks it does.
+		Assert("alloc.initialisers_cost_more_than_bare_vars", "alloc",
+			"three list initialisers cost more per instance than thirty bare vars",
+			(vars30 > 0 && lists3 > vars30) ? 1 : 0, 1,
+			"plain [round(plain,0.01)], 30 bare vars [round(vars30,0.01)], 3 list inits [round(lists3,0.01)] us")
 
 	AllocOne(id, T, reps)
 		// Discarded-unroll: `new T` with the result dropped allocates an
@@ -395,7 +474,9 @@ proc
 		var/t0 = world.tick_usage
 		for(var/i = 1 to reps / UNROLL)
 			X10(new T)
-		MeasureUTU(id, "alloc", "new [T]", world.tick_usage - t0, reps, UNROLL, null)
+		// Returns the measured value so a caller can assert on it. Nothing
+		// consumed this before the allocation-cause rows were added.
+		return MeasureUTU(id, "alloc", "new [T]", world.tick_usage - t0, reps, UNROLL, null)
 
 	// ---------------- movement ----------------
 

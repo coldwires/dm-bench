@@ -99,6 +99,31 @@ proc
 				VACC++
 		return world.tick_usage - tu0
 
+	// The maintained-list alternative, restored 2026-08-03 as a harness rather
+	// than as a remembered figure. Reading your own list of who is nearby
+	// instead of asking the engine is the standard advice, and this suite has
+	// never measured either half of the trade.
+	//
+	// Two halves, because a maintained list is not free and quoting only the
+	// read would be the same mistake as quoting del() without its control.
+	VW_ListRead(reps, list/maint)
+		VACC = 0
+		var/tu0 = world.tick_usage
+		for(var/i = 1 to reps)
+			for(var/mob/M in maint)
+				VACC++
+		return world.tick_usage - tu0
+
+	// The other half: what one movement costs to record. A mob leaving and
+	// entering a zone is a remove and an add, which is the maintenance a real
+	// implementation pays per move, per list, on top of the move itself.
+	VW_ListUpdate(reps, list/maint, mob/who)
+		var/tu0 = world.tick_usage
+		for(var/i = 1 to reps)
+			maint -= who
+			maint += who
+		return world.tick_usage - tu0
+
 	VW_Viewers(reps)
 		VACC = 0
 		var/tu0 = world.tick_usage
@@ -197,11 +222,25 @@ proc
 		// --- does the typed loop actually skip building? ---
 		// Add atoms that cannot match. If the list is never materialised, the
 		// typed loop should barely move while raw view() climbs steeply.
+		// Four levels as of 2026-08-03, restoring the shape of a sweep that once
+		// ran five and was cut to two when its harness left the tree. 667 atoms
+		// in view at the base, 2,667 at the top, which is the range the original
+		// "typical to crowded" claim was made over.
+		//
+		// The assertion moved OUT of the loop. It compares the top of the sweep
+		// against the base, and emitting it per level would have published the
+		// same id three times, which the merge would then see as a row count
+		// mismatch rather than as the mistake it is.
 		var/list/clutter = list()
 		var/base_raw = 0
 		var/base_typed = 0
 		var/m_clutter0 = 0
-		for(var/added in list(0, 1200))
+		var/top_raw = 0
+		var/top_typed = 0
+		var/top_atoms = 0
+		var/top_mobs = 0
+		var/list/adv = list()
+		for(var/added in list(0, 300, 1200, 2000))
 			while(clutter.len < added)
 				var/obj/vw_obj/o = new
 				o.loc = locate(50 + rand(-7,7), 50 + rand(-7,7), 1)
@@ -219,14 +258,29 @@ proc
 			if(added == 0)
 				base_raw = raw_us
 				base_typed = typed_us
-			else
-				Assert("view.typed_loop_skips_build", "view",
-					"typed loop grows far less than raw view() as clutter rises",
-					(raw_us / max(base_raw, 0.01) > 3 * (typed_us / max(base_typed, 0.01))) ? 1 : 0, 1,
-					"raw x[round(raw_us/max(base_raw,0.01),0.1)], typed x[round(typed_us/max(base_typed,0.01),0.1)] at [at] atoms, [mo] mobs")
+			top_raw = raw_us
+			top_typed = typed_us
+			top_atoms = at
+			top_mobs = mo
+			adv += (typed_us > 0) ? (raw_us / typed_us) : 0
 			MeasureTU("view.clutter_[added]_raw", "view", "view(7) build with [added] extra objs", dr, r_craw, 0, "[at] atoms")
 			var/mc = MeasureTU("view.clutter_[added]_typed", "view", "typed loop with [added] extra objs", dtp, r_ctyped, 0, "[mo] mobs")
 			if(added == 0) m_clutter0 = mc
+
+		Assert("view.typed_loop_skips_build", "view",
+			"typed loop grows far less than raw view() as clutter rises",
+			(top_raw / max(base_raw, 0.01) > 3 * (top_typed / max(base_typed, 0.01))) ? 1 : 0, 1,
+			"raw x[round(top_raw/max(base_raw,0.01),0.1)], typed x[round(top_typed/max(base_typed,0.01),0.1)] at [top_atoms] atoms, [top_mobs] mobs")
+
+		// The sweep's own invariant, and the reason four levels beat two: the
+		// advantage of the typed loop must widen at every step. Ordering, so no
+		// tolerance and nothing to tune. Two points can only show that a gap
+		// exists; four show that it grows monotonically with clutter, which is
+		// the actual claim this section makes.
+		Assert("view.clutter_advantage_rises", "view",
+			"the typed loop's advantage widens at every clutter level",
+			(adv.len == 4 && adv[1] < adv[2] && adv[2] < adv[3] && adv[3] < adv[4]) ? 1 : 0, 1,
+			"[round(adv[1],0.1)]x, [round(adv[2],0.1)]x, [round(adv[3],0.1)]x, [round(adv[4],0.1)]x")
 		for(var/obj/vw_obj/o in clutter)
 			o.loc = null
 		clutter.Cut()
@@ -258,6 +312,53 @@ proc
 			(same_lo > 0 && same_hi < same_lo * 1.5) ? 1 : 0, 1,
 			"inline [round(m_inline,0.01)], family [round(m_family,0.01)], clutter_0 [round(m_clutter0,0.01)] us, ratio [round(same_lo > 0 ? same_hi/same_lo : 0, 0.01)]x")
 
+		// --- reading your own list instead of asking the engine ---
+		//
+		// The list is built from the same query it is being compared against,
+		// so the two arms iterate the identical set. view.maintained_equivalence
+		// asserts that before the timings are allowed to mean anything, on the
+		// rule that a comparison proves it is fair first.
+		var/list/maint = list()
+		for(var/mob/M in view(7, vw_probe))
+			maint += M
+		var/r_maint = 270000
+		var/d_read = VW_ListRead(r_maint, maint)
+		var/seen_maint = VACC / r_maint
+		var/read_us = MeasureTU("view.maintained_read", "view", "for(mob in a maintained list)",
+			d_read, r_maint, 0, "[seen_maint] mobs, no query")
+
+		var/mob/vw_mob/sample = null
+		for(var/mob/vw_mob/M in maint)
+			sample = M
+			break
+		// 1.5M, not 270k. At 270k this block ran about 46 ms against a 50 ms
+		// tick and drew SHORT_BLOCK: an update is roughly 160x cheaper than the
+		// query it is being compared against, so it needs proportionally more
+		// repetitions to be measured at the same confidence.
+		var/r_upd = 1500000
+		var/d_upd = VW_ListUpdate(r_upd, maint, sample)
+		var/upd_us = MeasureTU("view.maintained_update", "view", "one remove plus one add on the list",
+			d_upd, r_upd, 0, "cost of recording a single move")
+
+		Assert("view.maintained_equivalence", "view",
+			"the maintained list iterates the same mobs the query returns",
+			(seen_maint == n_in) ? 1 : 0, 1,
+			"[seen_maint] from the list vs [n_in] from view(7)")
+
+		// The trade, stated as a break-even rather than as a winner.
+		//
+		// Expressed as moves per read, not reads per move. The first version of
+		// this row asked how many reads it takes to repay one update, which
+		// came out at 0.007 and then rounded to a published "0", a number that
+		// says nothing. Inverting it gives the quantity a reader actually has:
+		// how many times an atom may move between two queries before keeping
+		// your own list stops being worth it.
+		if(upd_us > 0)
+			Derived("view.maintained_moves_per_read", "view",
+				"moves an atom may make between reads before the query wins",
+				round(max(m_inline - read_us, 0) / upd_us, 0.1), "moves",
+				"query [round(m_inline,2)] us, list read [round(read_us,2)] us, one update [round(upd_us,3)] us")
+
 		// --- is view() cost driven by opaque atoms? ---
 		var/list/blocks = list()
 		// Same named-count rule as the rows above. Both arms divided by 60,000
@@ -274,10 +375,28 @@ proc
 		var/seen_blocked = VACC / r_los
 		var/us_clear = v_clear * US_PER_PCT / r_los
 		var/us_blocked = v_blocked * US_PER_PCT / r_los
+
+		// The control this table lost, restored 2026-08-03. range() computes no
+		// line of sight, so opacity is nothing to it: it should neither cost
+		// more nor see less with 200 opaque atoms in the scene. Without this
+		// arm, "view() cost does not rise with opaque atoms" is a claim about
+		// one call with nothing to compare it against, and a harness that had
+		// stopped responding to the scene entirely would pass it.
+		var/r_rng = 270000
+		var/g_blocked = VW_Range(r_rng)
+		var/seen_rng_blocked = VACC / r_rng
+		var/us_rng_blocked = g_blocked * US_PER_PCT / r_rng
+		MeasureTU("view.range_with_opaque", "view", "for(mob in range(7,c)), 200 opaque",
+			g_blocked, r_rng, 0, "[seen_rng_blocked] mobs")
+
 		Assert("view.los_cost_is_unconditional", "view",
 			"view() cost does not rise with opaque atom count",
 			(us_blocked < us_clear * 1.6) ? 1 : 0, 1,
 			"[round(us_clear,1)] us clear vs [round(us_blocked,1)] us with 200 opaque")
+		Assert("view.range_ignores_opacity", "view",
+			"range() sees the same mobs whether or not they are occluded",
+			(seen_rng_blocked >= seen_clear) ? 1 : 0, 1,
+			"range sees [seen_rng_blocked] mobs at [round(us_rng_blocked,1)] us with 200 opaque; view saw [seen_clear] with none and [seen_blocked] with 200")
 		Assert("view.occlusion_works", "view",
 			"opaque atoms actually occlude", (seen_blocked < seen_clear) ? 1 : 0, 1,
 			"[seen_clear] mobs visible, [seen_blocked] with 200 opaque")
