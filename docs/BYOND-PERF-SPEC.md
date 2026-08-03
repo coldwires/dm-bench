@@ -462,9 +462,26 @@ lookup, list building with `+=`, and `L.Copy()`. That last one is the important
 one, because it is also a list method call, so this is not a change in how
 methods dispatch. Whatever moved is inside the scan.
 
-**What is not known: which build did it.** This suite holds 516.1666 and
-516.1685 and the gap between them is nineteen builds. Nothing here identifies
-the boundary, and no mechanism is offered.
+**It was introduced in 516.1674.** Bisected across six builds, with the
+boundary pair repeated three times each and no overlap between them:
+
+| build | `Find()` cost, percent of a tick, 1,000-element list |
+|---|---|
+| 516.1666 | 1,410 |
+| 516.1672 | 1,422 |
+| **516.1673** | **1,383, 1,412, 1,435** |
+| **516.1674** | **6,252, 6,264, 6,306** |
+| 516.1676 | 6,286 |
+| 516.1679 | 6,410 |
+| 516.1685 | 6,312 |
+
+A 4.5x step between two consecutive builds, holding for the eleven that follow,
+while `in` over the same list stays flat throughout as the control.
+
+**No mechanism is offered.** This repository does not hold BYOND's release
+notes, so what changed in that build is outside what it can answer. What it can
+say is where: clean at 516.1673, regressed at 516.1674, still regressed at
+516.1685.
 
 **Practical consequence, on 516.1685:** `Find()` costs about 5.8x what `in`
 costs for the same scan, against 1.4x on 516.1666. If you want a position, it
