@@ -42,21 +42,27 @@ function Parse-Tsv([string]$path) {
     [pscustomobject]@{ Rows = $rows; Meta = $meta }
 }
 
-$s66 = Parse-Tsv (Join-Path $Results "516.1666-windows-merged.tsv")
-$s85 = Parse-Tsv (Join-Path $Results "516.1685-windows-merged.tsv")
-$d66 = Parse-Tsv (Join-Path $Results "516.1666-windows-del-v3.tsv")
-$d85 = Parse-Tsv (Join-Path $Results "516.1685-windows-del-v3.tsv")
+# The tables are rendered from the measurement machine, which is the headless
+# Linux box: it merges with one wide row in 92 against the Windows desktop's
+# 24, because the desktop is in daily use and cannot be quiesced. Both machines
+# run the whole suite and agree on every assertion; the Windows column is the
+# cross-check, and appears where the two genuinely disagree rather than beside
+# every figure. Swapped 2026-08-03, when the Windows re-baseline made the gap
+# plain: publishing the noisier machine as the headline was misrepresenting
+# what this project can measure.
+$s66 = Parse-Tsv (Join-Path $Results "516.1666-unix-merged.tsv")
+$s85 = Parse-Tsv (Join-Path $Results "516.1685-unix-merged.tsv")
+$d66 = Parse-Tsv (Join-Path $Results "516.1666-unix-del.tsv")
+$d85 = Parse-Tsv (Join-Path $Results "516.1685-unix-del.tsv")
 
-# A second machine's baselines are optional input. The page renders without
-# them exactly as it did before; when they are present it grows one section,
-# not a column in every table. See the platform section below for why.
+# The cross-check machine is optional input. The page renders without it, and
+# when it is present it grows one section rather than a column in every table.
 function Parse-Opt([string]$name) {
     $p = Join-Path $Results $name
     if (-not (Test-Path $p)) { return $null }
     return Parse-Tsv $p
 }
-$u66 = Parse-Opt "516.1666-unix-merged.tsv"
-$uDel = Parse-Opt "516.1666-unix-del.tsv"
+$x66 = Parse-Opt "516.1666-windows-merged.tsv"
 
 function RowVal($set, [string]$id) {
     if (-not $set) { return $null }
@@ -328,12 +334,12 @@ foreach ($a in $a66) { $o = $s85.Rows[$a.Id]; if ($o -and $o.Status -eq $a.Statu
 $DivergeX = 2.0
 $platRatios = New-Object System.Collections.Generic.List[object]
 $platformOk = $false
-if ($u66) {
-    $clockW = $s66.Meta['clock']; $clockU = $u66.Meta['clock']
-    if (-not $clockW -or -not $clockU) {
+if ($x66) {
+    $clockP = $s66.Meta['clock']; $clockX = $x66.Meta['clock']
+    if (-not $clockP -or -not $clockX) {
         Write-Warning "platform section skipped: a baseline does not record its clock, so the two cannot be compared"
-    } elseif ($clockW -ne $clockU) {
-        Write-Warning "platform section skipped: windows timed with $clockW, unix with $clockU"
+    } elseif ($clockP -ne $clockX) {
+        Write-Warning "platform section skipped: linux timed with $clockP, windows with $clockX"
     } else {
         # Two exclusions, both to stop this table over-claiming.
         #
@@ -353,13 +359,13 @@ if ($u66) {
         $PlatFloorUs = 0.2
         foreach ($r in $m66) {
             if ($r.Unit -ne 'us') { continue }
-            $w = RowVal $s66 $r.Id
-            $u = RowVal $u66 $r.Id
+            $u = RowVal $s66 $r.Id
+            $w = RowVal $x66 $r.Id
             if ($null -eq $w -or $null -eq $u) { continue }
             if ($w -lt $PlatFloorUs -or $u -lt $PlatFloorUs) { continue }
             if ($r.Heavy) { continue }
-            $uRow = $u66.Rows[$r.Id]
-            if ($uRow -and $uRow.Heavy) { continue }
+            $xRow = $x66.Rows[$r.Id]
+            if ($xRow -and $xRow.Heavy) { continue }
             $platRatios.Add([pscustomobject]@{ Row = $r; Win = $w; Unix = $u; R = $w / $u })
         }
         $platformOk = ($platRatios.Count -ge 10)
@@ -443,8 +449,8 @@ $navPlatform = ''
 if ($platformOk) { $navPlatform = '<a href="#platform">Platform</a>' }
 $L.Add("<header><span class=`"wordmark`">dm-bench</span><nav aria-label=`"site`"><a href=`"#trust`">Trust</a><a href=`"#behaviour`">Behaviour</a><a href=`"#costs`">Costs</a>$navPlatform<a href=`"#rules`">Rules</a><a href=`"#method`">Method</a></nav></header>")
 $L.Add('<p class="tagline">The measured behaviour and cost of BYOND engine operations, per build, reproducibly. Most published BYOND performance advice is untested; this replaces assertion with measurement. The repository is the database: every figure below regenerates from a version-stamped TSV baseline.</p>')
-$machines = 'windows'
-if ($platformOk) { $machines = 'windows, cross-checked on linux' }
+$machines = 'linux'
+if ($platformOk) { $machines = 'linux, cross-checked on windows' }
 $L.Add("<p class=`"buildmeta mono`">516.1666 and 516.1685 &middot; $machines &middot; main suite $($a66.Count) assertions / $($m66.Count) measurements per build &middot; del suite $($aDel.Count) / $($mDel.Count) &middot; $identical of $($a66.Count) assertion verdicts identical across builds</p>")
 
 # ---- why trust this ----
@@ -468,13 +474,13 @@ $trust = @(
     @('The whole pipeline is open.', 'The harness, the runner, the results files, and the generator that built this page live in one repository. Clone it, drop a BYOND release into a folder, and rerun everything. Your absolute times will differ; your ratios should not.'),
     @('What could not be tested is not on the page.', 'Plenty of circulating BYOND claims have no harness here yet. Those are left out entirely, so every figure and every rule shown has a measurement behind it. The docs are also machine-checked: a script verifies that every count quoted in prose matches the data files and fails otherwise.'),
     @('Mistakes stay on the record.', 'When a published figure turns out to be wrong, it gets corrected in place with the old value still shown. The repository history contains every wrong number this project has published and the check that caught it.'),
-    @('Even the machine had to qualify.', 'Before this machine could publish, its noise floor was measured at about 15% on long-running rows. A scheduling experiment then showed half of that came from the OS and cut it to 10% by raising process priority. Its sensitivity to background load was mapped across a day, and its clock was calibrated against a wall-clock reference and checked for linearity across a 500x workload range. Any machine that joins, including yours if you run the suite, goes through the same steps before its column counts.')
+    @('Even the machine had to qualify.', 'Before a machine may publish, its own noise is measured: the suite is run repeatedly and the disagreement between runs becomes that machine''s error bar, a scheduling experiment decides whether raising process priority helps it, its sensitivity to background load is mapped across a day, and its clock is calibrated against a wall-clock reference and checked for linearity across a 500x workload range. The figures here come from a dedicated headless machine that does nothing else, whose runs agree to about 2%. The first machine this project used was a desktop in daily use, and its runs agree to about 9%; that one is kept as a cross-check rather than as the source of figures, which is what a per-machine error bar is for. Any machine that joins, including yours, goes through the same steps before its column counts.')
 )
 foreach ($t in $trust) {
     $L.Add("<p class=`"trustitem`"><strong>$($t[0])</strong> $($t[1])</p>")
 }
 $L.Add('</div>')
-$L.Add('<p class="sub">One limit to know about: absolute times come from one machine and carry an error bar of at least 15%. The ratios between rows are the numbers meant to travel to your hardware.</p>')
+$L.Add('<p class="sub">One limit to know about: absolute times come from one machine. The ratios between rows are the numbers meant to travel to your hardware, and even those carry a caveat, since a ratio only transfers when both of its halves are bounded by the same thing. Two pieces of computation compare fine. Buffered logging against an unbuffered file write does not, and the platform section below is what that looks like when measured.</p>')
 $L.Add('</section>')
 
 # ---- behaviour matrix ----
@@ -502,7 +508,7 @@ $L.Add('</section>')
 # ---- measurements ----
 $L.Add('<section id="costs">')
 $L.Add('<h2>Measured costs</h2>')
-$L.Add('<p class="sub">Median of three runs per build at High process priority, spread beside every figure (the bar fills at 25%). Rows that failed a resolution check print as withheld, because below a certain size the clock produces noise shaped like data. Absolute times belong to this machine; the ratios between rows are what carry over to yours. The two builds were measured in separate sittings, so compare ratios within a build rather than absolutes across builds. <strong>Click any row to see the DM code that produced it</strong>, extracted from the suite source when this page was generated, so it cannot drift from what ran.</p>')
+$L.Add('<p class="sub">Median of three runs per build on a dedicated headless machine, spread beside every figure (the bar fills at 25%). Rows that failed a resolution check print as withheld, because below a certain size the clock produces noise shaped like data. Absolute times belong to this machine; the ratios between rows are what carry over to yours. The two builds were measured in separate sittings, so compare ratios within a build rather than absolutes across builds. <strong>Click any row to see the DM code that produced it</strong>, extracted from the suite source when this page was generated, so it cannot drift from what ran.</p>')
 $L.Add('<div class="scroll"><table>')
 $L.Add('<thead><tr><th>measurement</th><th class="num">516.1666</th><th class="num">516.1685</th></tr></thead><tbody>')
 $cat = ''
@@ -546,32 +552,33 @@ if ($platformOk) {
 
     $L.Add('<section id="platform">')
     $L.Add('<h2>Where the operating system changes the answer</h2>')
-    $L.Add("<p class=`"sub`">The suite also runs on a second machine, bare metal Linux, and every assertion carries the same verdict on both: engine <em>behaviour</em> does not depend on the operating system as far as this suite can see. Cost mostly does not either. Across $($platRatios.Count) rows measured on both machines the median difference is $($medR.ToString('0.00'))x, which is the sort of gap any two machines show, so <strong>the tables above are not split by platform</strong>. What follows is the short list of rows where the platform genuinely changes the number, at $([math]::Round($DivergeX, 0))x or more.</p>")
+    $L.Add("<p class=`"sub`">The whole suite also runs on a Windows desktop, and every assertion carries the same verdict on both machines: engine <em>behaviour</em> does not depend on the operating system as far as this suite can see. Cost mostly does not either. Across $($platRatios.Count) rows measured on both the median difference is $($medR.ToString('0.00'))x, the sort of gap any two machines show, so <strong>the tables above are not split by platform</strong>. What follows is the short list of rows where the platform genuinely changes the number, at $([math]::Round($DivergeX, 0))x or more.</p>")
 $L.Add('<p class="sub">Two things are deliberately absent. Rows too small for either machine to resolve are excluded, because a ratio between two figures inside the error bar is arithmetic rather than a measurement. So is <code>del()</code>, even though both machines measure it: its rows are one memory-bound scan sampled at several populations, and the slope of that scan has already been measured here to be a property of a machine''s memory subsystem rather than of its operating system. Listing it would dress a machine difference as a platform one.</p>')
 
     if ($diverged.Count) {
         $L.Add('<div class="scroll"><table>')
-        $L.Add('<thead><tr><th>measurement</th><th class="num">windows</th><th class="num">linux</th><th class="num">difference</th></tr></thead><tbody>')
+        $L.Add('<thead><tr><th>measurement</th><th class="num">linux</th><th class="num">windows</th><th class="num">difference</th></tr></thead><tbody>')
         foreach ($dv in $diverged) {
-            if ($dv.R -ge 1) { $verdict = "{0}x cheaper on linux" -f [math]::Round($dv.R, 1) }
-            else             { $verdict = "{0}x dearer on linux"  -f [math]::Round(1 / $dv.R, 1) }
+            if ($dv.R -ge 1) { $verdict = "{0}x dearer on windows" -f [math]::Round($dv.R, 1) }
+            else             { $verdict = "{0}x cheaper on windows" -f [math]::Round(1 / $dv.R, 1) }
             if ($dv.Win -ge 10) { $wv = [math]::Round($dv.Win, 1) } else { $wv = [math]::Round($dv.Win, 2) }
             if ($dv.Unix -ge 10) { $uv = [math]::Round($dv.Unix, 1) } else { $uv = [math]::Round($dv.Unix, 2) }
-            $L.Add("<tr><td><span class=`"mono`">$(Esc $dv.Row.Id)</span> $(Esc $dv.Row.Name)</td><td class=`"num`">$wv &micro;s</td><td class=`"num`">$uv &micro;s</td><td class=`"num`">$verdict</td></tr>")
+            $L.Add("<tr><td><span class=`"mono`">$(Esc $dv.Row.Id)</span> $(Esc $dv.Row.Name)</td><td class=`"num`">$uv &micro;s</td><td class=`"num`">$wv &micro;s</td><td class=`"num`">$verdict</td></tr>")
         }
         $L.Add('</tbody></table>')
         $L.Add('<caption>Computed from the two baselines when this page was generated, both timed on the same clock, one machine per column. These are absolute times from different machines and do not transfer; what transfers is that the gap exists and roughly how large it is.</caption></div>')
     }
 
     $bindNote = ''
-    if ($u66.Meta['stdout_binding']) {
-        $bindNote = " On the linux machine DreamDaemon's stdout is bound to a $($u66.Meta['stdout_binding']), which is part of why its <code>world.log</code> figure reads as it does; the binding is recorded in the baseline rather than assumed, because it moves that row by about 20x."
+    if ($s66.Meta['stdout_binding']) {
+        $bindNote = " On the measuring machine DreamDaemon's stdout is bound to a $($s66.Meta['stdout_binding']), which is part of why its <code>world.log</code> figure reads as it does; the binding is recorded in the baseline rather than assumed, because it moves that row by about 20x."
     }
     $L.Add("<p class=`"sub`"><strong>What this means for advice.</strong> Rules built on compute survive the crossing unchanged. Rules built on the io layer do not, and logging is the one to watch: preferring <code>world.log</code> over a direct file write is a large win on Windows and a much smaller one on Linux, because a file write is itself far cheaper there.$bindNote The rules table states both rather than picking one.</p>")
-    # Only the two files this section is computed from. The unix del baseline
-    # exists and is in the repository, but nothing here is derived from it, and
-    # a link implying otherwise is the sort of drift this page is built against.
-    $dataLinks = "<a href=`"$DataHref/516.1666-windows-merged.tsv`">516.1666-windows-merged.tsv</a> &middot; <a href=`"$DataHref/516.1666-unix-merged.tsv`">516.1666-unix-merged.tsv</a>"
+    # Only the two files this section is computed from. The del baselines exist
+    # for both machines and are in the repository, but nothing here is derived
+    # from them, and a link implying otherwise is the drift this page is built
+    # against.
+    $dataLinks = "<a href=`"$DataHref/516.1666-unix-merged.tsv`">516.1666-unix-merged.tsv</a> &middot; <a href=`"$DataHref/516.1666-windows-merged.tsv`">516.1666-windows-merged.tsv</a>"
     $L.Add("<p class=`"sub mono`">Data: $dataLinks</p>")
     $L.Add('</section>')
 }
@@ -628,7 +635,7 @@ if ($addVsPlus) { $rules.Add(@('Build lists with <code>+=</code> rather than .Ad
 # travel. It is stated per machine rather than averaged, and the direction,
 # which is what the advice rests on, holds on both.
 $logParts = @()
-foreach ($m in @(@($s66, 'windows'), @($u66, 'linux'))) {
+foreach ($m in @(@($s66, 'linux'), @($x66, 'windows'))) {
     $fw = RowVal $m[0] 'io.file_write_short'
     $wl = RowVal $m[0] 'io.world_log_short'
     if ($null -eq $fw -or $null -eq $wl) { continue }
@@ -663,16 +670,15 @@ $L.Add('<section id="method">')
 $L.Add('<h2>Method</h2>')
 $L.Add('<p class="sub">Hypothesis, test with a control, empirical data, repeat. Every entry is a falsifiable statement about the engine with a harness behind it.</p>')
 $L.Add('<footer>')
-$L.Add('<p>Every baseline is three runs merged: medians per row, observed spread published, assertions PASS only if every run passed. Runs execute DreamDaemon at High process priority, which halves long-row spread; the residual spread floor is thermal and cache state, measured at about 10 to 15%, so absolute figures carry at least that error bar and sub-microsecond values are one significant figure. Timing rows pass resolution guards (a 0.1s wall clock quantum, a tick-usage floor, a subtraction-noise check) or are withheld.</p>')
+$L.Add('<p>Every baseline is three runs merged: medians per row, observed spread published, assertions PASS only if every run passed. Each machine runs in whatever condition its own qualification measured as best, which is not the same answer everywhere: raising process priority halved long-row spread on the desktop and does nothing on the dedicated box, where no other process is competing. Timing rows pass resolution guards (a tick-usage floor and a subtraction-noise check) or are withheld. Each result records the clock it used, how stdout was bound, and the source commit it was built from, and a merge refuses to blend runs that disagree on any of the three.</p>')
 $L.Add('<p>del() measurements run in their own process because peak concurrent population permanently raises later del() cost in the same process, a property this suite measured and every earlier published del() figure silently suffered from.</p>')
 if ($platformOk) {
-    $L.Add('<p>Measured on DreamDaemon 516.1666 and 516.1685. The build-by-build tables come from the Windows machine; a second machine running bare metal Linux carries the same suite, and the two agree on every assertion and on every cost outside the io layer. Engine behaviour claims are tested, not cited; where a claim could not be tested, it is absent rather than repeated.</p>')
+    $L.Add('<p>Measured on DreamDaemon 516.1666 and 516.1685. The tables come from a dedicated headless Linux machine; a Windows desktop runs the same suite as a cross-check, and the two agree on every assertion and on every cost outside the io layer. Engine behaviour claims are tested, not cited; where a claim could not be tested, it is absent rather than repeated.</p>')
 } else {
-    $L.Add('<p>Measured on DreamDaemon 516.1666 and 516.1685, Windows 11, single machine. Engine behaviour claims are tested, not cited; where a claim could not be tested, it is absent rather than repeated.</p>')
+    $L.Add('<p>Measured on DreamDaemon 516.1666 and 516.1685 on a single machine. Engine behaviour claims are tested, not cited; where a claim could not be tested, it is absent rather than repeated.</p>')
 }
-$genFrom = @('results/516.1666-windows-merged.tsv', 'results/516.1685-windows-merged.tsv', 'results/516.1666-windows-del-v3.tsv', 'results/516.1685-windows-del-v3.tsv')
-if ($u66)  { $genFrom += 'results/516.1666-unix-merged.tsv' }
-if ($uDel) { $genFrom += 'results/516.1666-unix-del.tsv' }
+$genFrom = @('results/516.1666-unix-merged.tsv', 'results/516.1685-unix-merged.tsv', 'results/516.1666-unix-del.tsv', 'results/516.1685-unix-del.tsv')
+if ($x66) { $genFrom += 'results/516.1666-windows-merged.tsv' }
 $L.Add("<p class=`"mono`">Generated $(Get-Date -Format 'yyyy-MM-dd') from $($genFrom -join ', ')</p>")
 $L.Add('</footer>')
 $L.Add('</section>')
