@@ -62,11 +62,19 @@ used. Extract a release into a new folder and the runner finds it. The
 binaries are Byond Software's and are not redistributed here.
 
 `.\tools\fetch-byond.ps1 -Version 516.1685` will download and lay one out for
-you. It
-is **unverified against the network**: it was written without running a
-download, so if the release URL has changed, pass `-Url` with the real one.
-Extracting a release by hand into `byond-standalones/<version>/` is equivalent
-and always works.
+you. **Exercised end to end on 2026-08-03**: it fetched 516.1679 in about 50
+seconds, extracted it, verified that the binaries report the version the
+folder claims, and `run.ps1 -List` then discovered it. If packaging ever
+changes, pass `-Url` with the real one; extracting a release by hand into
+`byond-standalones/<version>/` is equivalent and always works.
+
+Two things worth knowing before scripting it. byond.com rate-limits: three
+requests in quick succession returned 429 on the third. And the script
+replaces the target directory, so `-Force` on a build you already have will
+delete it before the download starts.
+
+`tools/fetch-byond.sh` is the Linux counterpart. Its URL shape is checked but
+the script itself has not been run end to end, unlike the PowerShell one.
 
 ```powershell
 .\tools\run.ps1 -List                                  # discovered builds
