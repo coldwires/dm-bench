@@ -12,10 +12,17 @@ to run if the extracted binaries report a different version, so a wrong or
 moved download cannot quietly produce a baseline attributed to the wrong
 engine.
 
-URL shape verified 2026-08-01 by HEAD request against 516.1666, for both this
-Windows zip and the _byond_linux.zip variant the Linux setup uses. A full
-download has not been exercised; if packaging has changed, pass -Url with the
-real one and open an issue so this default can be corrected.
+Exercised end to end on 2026-08-03 against 516.1679: about 50 seconds for an
+8.6 MB zip, extracted, version-verified, and discovered by run.ps1 afterwards.
+If packaging changes, pass -Url with the real one and open an issue so this
+default can be corrected.
+
+byond.com rate-limits. Three requests in quick succession returned 429 on the
+third, so a script that walks a list of builds should pause between them.
+
+Note that this REPLACES the target directory. Passing -Force on a build you
+already have deletes it before the download starts, so a failed download
+leaves you with neither.
 
 .EXAMPLE
 .\fetch-byond.ps1 -Version 516.1666
