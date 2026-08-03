@@ -7,7 +7,10 @@ name: dm-bench site
 
 on:
   push:
-    branches: [master]
+    # This repository's default branch is master. main is listed too so that a
+    # fork, which GitHub creates with main as the default, publishes without
+    # anyone having to notice this line.
+    branches: [master, main]
     paths:
       - 'results/**'
       - 'site/**'
