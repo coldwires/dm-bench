@@ -160,9 +160,18 @@ qualification the original Windows machine went through:
 
 The point of all four: each machine's column carries its own error bars, and
 no number is quoted at more precision than its machine has demonstrated it
-can deliver. A new machine publishes nothing until it has been through this;
-a planned bare-metal Linux box will be the second, and the same protocol
-applies to anyone running the suite on their own hardware.
+can deliver. A new machine publishes nothing until it has been through this,
+and the same protocol applies to anyone running the suite on their own
+hardware.
+
+Two machines have been through it. The first is a Windows desktop in daily
+use, which is why its error bars are the wider pair. The second is a
+bare-metal Linux box, headless, clock-clamped and otherwise idle, qualified
+2026-08-02: its median run-to-run spread is about 2%, against about 9% on the
+first machine measured the same way. **That gap is the machine and its
+conditions, not the operating system**, and it is the clearest available
+demonstration of why absolute times are published per machine and never
+blended.
 
 ## Setting up a bench machine
 
@@ -309,9 +318,23 @@ x86.
 The machine's standard running condition (priority, boost state, stdout
 binding) is recorded alongside its qualification numbers, and its results
 get their own column with their own error bars, per the federation rules
-below. A first Linux machine additionally produces the first `-unix`
-baselines and the first cross-OS assertion matrix; whether every verdict
-holds across operating systems is an open question nobody has data on.
+below.
+
+**The first cross-OS assertion matrix now exists, and it is clean.** All 52
+assertions carry the same verdict on Windows and Linux, on both 516.1666 and
+516.1685, compared by id and verdict rather than by counting passes. That was
+an open question with no data behind it until 2026-08-03. It is the weaker of
+the two possible answers, since a disagreement would have been a finding about
+the engine, but it is the one that makes the assertion half of this suite
+portable in fact rather than in principle.
+
+Cost is a different story in one place. Engine compute measures the same on
+both machines; the io layer does not, and a direct file write is roughly 20x
+cheaper on the Linux box than on the Windows one. Design advice that rests on
+io therefore carries its platform with it. The results page states the
+divergent rows and links both baselines; the tables are deliberately not split
+by operating system, because a handful of rows do not justify a dimension
+through every figure.
 
 ## Many machines, one record
 

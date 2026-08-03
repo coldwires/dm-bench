@@ -16,6 +16,28 @@ Measured cost of common BYOND operations.
 - Where two snippets are claimed equivalent, the harness asserts matching output counts and prints the result.
 - Harnesses: `suite.dme` and `suite_del.dme`. Sections 1 through 10, 11b, 13 and 14 regenerate from them. Figures imported from harnesses absent from this tree are flagged in place and are now confined to: the `extras/respawn.dme` line in section 8, two side observations in section 14, and sections 11 and 12 entire, whose harnesses (`spec_sheet.dme`, `hypotheses.dme`) predate this suite. Several tables lost rows on 2026-08-01 because those rows came from absent harnesses and could not be reproduced; each loss is noted where it happened rather than quietly carried.
 
+**Regenerated 2026-08-03, and two things changed that a reader should know
+before comparing this page to an older copy.** The Windows baselines were
+retaken as three runs per build after every measured row outside the scheduler
+moved from `world.timeofday` to `world.tick_usage`. First, the ratios in the
+summary table at the bottom are recomputed from those runs, and four moved
+inside the error bar this page already declares: the typed view loop 9.5x to
+8.5x, `range()` against `view()` 2.3x to 2.6x, `loc` against `Move()` 8x to
+about 9x, and the associative lookup at 5,000 entries 81x to 74x. The
+section-by-section tables below still quote the 2026-08-01 figures except in
+§11b, and re-deriving them is outstanding work.
+
+Second, **the spread column roughly doubled, from a median of 9% to 18%, and
+that is mostly the instrument getting more honest rather than the engine or
+the suite getting worse.** A 0.1s wall clock cannot express a disagreement
+smaller than its own quantum, so run-to-run variation below that was invisible
+and printed as a tight spread; `world.tick_usage` resolves it. The same effect
+was measured in the other direction on the Linux machine, whose long rows read
+exactly 0% spread until the same conversion. Part of the increase is also that
+the Windows machine is in daily use and cannot be quiesced. Which is why
+**precision figures now come from a dedicated Linux machine**, whose merged
+baselines carry one wide row in 92 against this machine's 22.
+
 **Repeatability and precision.** Every baseline is three runs merged, median
 and spread per row. **Absolute figures carry an error bar of at least 15%,
 measured rather than estimated**: rows over 10 µs, where quantization is
@@ -565,17 +587,38 @@ file << "line with [value]"     // 207 us   includes string building
 world.log << "short line"       // 4.5 us
 ```
 
-**A direct file write costs about 190 us.** That is roughly 1,000 proc calls,
-and at `tick_lag 0.5` about 260 of them consume the entire tick. Writing to a
-file per game event is not viable.
+**A direct file write costs about 190 us on Windows.** That is roughly 1,000
+proc calls, and at `tick_lag 0.5` about 260 of them consume the entire tick.
+Writing to a file per game event is not viable there.
 
-**`world.log` is ~43x cheaper** at 4.5 us, because it goes to buffered stdout
-rather than an unbuffered flush. **That advantage depends on what stdout is.**
-Bound to a file handle rather than inherited from a console or pipe,
-`world.log` measured 85 µs, a fifth of a direct file write instead of a
-fortieth. Anyone running DreamDaemon under `> server.log` loses most of the
-benefit. That figure is one run each way against eight of the inherited case,
-so treat the 20x as the shape rather than the coefficient.
+**`world.log` is ~46x cheaper on Windows** at 4.2 us, because it goes to
+buffered stdout rather than an unbuffered flush.
+
+**That multiple is not a property of the engine, and this is the one place on
+this page where the operating system changes the advice.** Measured on both
+machines, same suite, same clock, three runs each:
+
+| | windows | linux |
+|---|---|---|
+| `file << "short line"` | 190.5 µs | 8.51 µs |
+| `world.log << "short line"` | 4.15 µs | 1.92 µs |
+| advantage of `world.log` | **45.9x** | **4.4x** |
+
+A direct file write is about 22x cheaper on Linux, so the gap it opens over
+`world.log` mostly closes. The direction survives on both, which is what the
+advice rests on; the magnitude does not travel, and neither would any ratio
+whose two arms are bounded by different resources. Buffered stdout against an
+unbuffered syscall is exactly such a pair.
+
+**The binding matters as much as the platform.** `world.log` goes to stdout,
+so what stdout *is* decides its cost. Bound to a file handle rather than
+inherited from a console or pipe, `world.log` measured 85 µs on Windows, a
+fifth of a direct file write instead of a fortieth. Anyone running
+DreamDaemon under `> server.log` loses most of the benefit. That figure is one
+run each way against eight of the inherited case, so treat the 20x as the
+shape rather than the coefficient. The Linux figures above were taken with
+stdout bound to a file, which is recorded in that baseline rather than
+assumed.
 
 **Cost is per call, not per byte.** 1000 characters costs 11% more than 10,
 despite 100x the data. Batching many lines into a single write is therefore
@@ -822,13 +865,13 @@ builds, and each names the section it comes from.
 
 | Rule | Ratio | From |
 |---|---|---|
-| `for(var/mob/M in view())` instead of assigning `view()` to a var | 9.5x at 667 atoms, 43.5x at 1,867 | §1 |
-| Re-query `view()` instead of caching for two passes | 1.85x on 1666, 1.64x on 1685, 1.6x at worst in 12 samples | §1 |
-| `range()` instead of `view()` when line of sight is not needed | 2.3x | §1 |
-| `loc =` instead of `Move()` when callbacks are not needed | 8x | §9 |
-| Associative list instead of `in` at 5,000 entries | 81x | §3 |
+| `for(var/mob/M in view())` instead of assigning `view()` to a var | 8.5x at 667 atoms, 41.3x at 1,867 | §1 |
+| Re-query `view()` instead of caching for two passes | 1.85x on 1666, 1.70x on 1685, and every sample so far favours re-querying | §1 |
+| `range()` instead of `view()` when line of sight is not needed | 2.6x | §1 |
+| `loc =` instead of `Move()` when callbacks are not needed | about 9x, 8.2 to 9.6x across the two builds | §9 |
+| Associative list instead of `in` at 5,000 entries | 74x | §3 |
 | `+=` instead of `.Add()` for list building | 1.4x | §4 |
-| `world.log` instead of a direct file write | 43x, but only when stdout is not a file | §11b |
+| `world.log` instead of a direct file write | 45.9x on Windows, 4.4x on Linux; platform-conditional, and only when stdout is not a file | §11b |
 | Dropping the last reference instead of `del()` at 300k live objects | `del()` alone costs 3,800 µs; the ratio is not quoted, see §2 | §2 |
 
 Two rules were dropped from this table on 2026-08-01 rather than restated:
