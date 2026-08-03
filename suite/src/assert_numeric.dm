@@ -45,6 +45,32 @@ proc
 			"accumulator saturates at 2^24", acc, 16777216,
 			"expected 18000000, lost [18000000 - acc], no error raised")
 
+		// --- num2text switches to scientific notation above the bound ---
+		//
+		// The consequence is not arithmetic, it is text: a number that is still
+		// exactly representable stops rendering as digits, so anything writing
+		// an id, a savefile key or a log line through string interpolation
+		// silently changes format partway up the range.
+		//
+		// Ported 2026-08-03. This was published for months as an observation
+		// from a harness that is not in this tree, then withdrawn when the page
+		// was audited for figures nobody could reproduce. It is four lines, so
+		// withdrawing it was the wrong trade: it is asserted here instead.
+		//
+		// The control is the point. 16777216 is at the bound and must still
+		// render as digits, so a build that changed formatting wholesale would
+		// fail that one rather than quietly passing this pair.
+		var/at_bound = "[16777216]"
+		var/above_bound = "[16777218]"
+		Assert("numeric.num2text_plain_at_bound", "numeric",
+			"a value at 2^24 still renders as digits",
+			findtext(at_bound, "e+") ? 0 : 1, 1,
+			"\"[at_bound]\"")
+		Assert("numeric.num2text_scientific_above_bound", "numeric",
+			"a value above 2^24 renders in scientific notation",
+			findtext(above_bound, "e+") ? 1 : 0, 1,
+			"16777218 renders as \"[above_bound]\", not as digits")
+
 		// --- bit shifts ---
 		Assert("numeric.shift_23_ok", "numeric", "1 << 23", 1 << 23, 8388608, "highest usable bit")
 		Assert("numeric.shift_24_zero", "numeric", "1 << 24", 1 << 24, 0, "mask becomes zero, not a large number")

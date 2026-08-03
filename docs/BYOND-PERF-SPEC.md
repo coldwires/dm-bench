@@ -131,6 +131,10 @@ This suite times the `view()` row three times in three places, and
 27.40 and 27.35 µs, a ratio of 1.00x. That assertion exists because a divisor
 defect once put those same three rows 1.83x apart.
 
+A comparison against a manually maintained list of atoms used to close this
+block, and was withdrawn in an earlier audit because its harness is not in
+this repository. It has not been rebuilt.
+
 `view()` computes line of sight and `range()` does not, which costs **1.9x**
 here on both builds. **This is one of the few ratios that does not travel
 cleanly between machines**: the Windows desktop reads 2.6x for the same pair,
@@ -150,6 +154,11 @@ Adding 200 opaque atoms does not raise the cost; it lowers the count seen, so
 occlusion works (41 mobs down to 6). Both figures come from
 `view.los_cost_is_unconditional` and `view.occlusion_works`, which assert the
 cost does not rise and that occlusion has an effect.
+
+An earlier version of this table carried a `range()` column alongside, showing
+that a call which computes no line of sight is unaffected by opaque atoms in
+either direction. It was withdrawn in an earlier audit because its harness is
+not in this repository, and it has not been rebuilt.
 
 ### Radius
 

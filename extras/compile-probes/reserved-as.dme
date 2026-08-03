@@ -1,0 +1,34 @@
+// COMPILE PROBE. This file MUST FAIL to compile. That is the result.
+//
+// Claim: `as` is reserved and cannot be used as a variable name.
+//
+// This is compile-time behaviour, so no runtime assertion in the suite can
+// reach it. The spec sheet carried it for months as an observation from a
+// harness that is not in this tree, and it was withdrawn during the 2026-08-03
+// audit for exactly that reason. A probe restores it as something a reader can
+// check in five seconds rather than take on trust.
+//
+// Run:
+//   byond-standalones\<build>\bin\dm.exe extras\compile-probes\reserved-as.dme
+//
+// Expected on 516.1666 and 516.1685:
+//   reserved-as.dm:NN:error: missing left-hand argument to =
+//   reserved-as.dmb - 1 error
+//
+// A build on which this compiles cleanly has un-reserved the word, which is a
+// language change worth knowing about. Success is the finding here, not the
+// failure: treat a clean compile as a result to investigate, not as the probe
+// being broken.
+//
+// The control matters as much as the probe. If BOTH declarations below failed,
+// this file would prove nothing about `as` specifically, only that the harness
+// rejects something. `notas` is an ordinary name and must compile, so comment
+// out the `as` line to see the file build cleanly.
+
+/proc/control()
+	var/list/notas = list()      // ordinary name, must compile
+	return notas.len
+
+/proc/probe()
+	var/list/as = list()         // reserved word, must NOT compile
+	return as.len
