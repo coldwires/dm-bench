@@ -223,16 +223,21 @@ belongs to the machine. Going from 50,000 to 300,000 live objects costs 12.7x
 the time on one machine here and 40x on the other. Carry the shape, not the
 coefficient.
 
-`suite.dme`, three runs merged per build on each machine: 52 assertions, 92
-measurements, **52 passed, 0 failed, 0 unstable on both builds and both
+`suite.dme`, three runs merged per build on each machine: 58 assertions, 118
+measurements, **58 passed, 0 failed, 0 unstable on both builds and both
 operating systems, with every assertion verdict identical across all four
 combinations.** That is the first cross-OS assertion matrix this project has
 been able to produce, and it is the result the assertion half of the suite
 exists to deliver.
 
-One row in 92 exceeds 25% spread on the measuring machine, `view.radius_1`,
-which is the smallest row in the radius sweep. On the desktop 24 and 37 rows
-do, which is that machine rather than the suite.
+Two rows in 118 exceed 25% spread on the measuring machine. On the desktop 19
+and 27 do, which is that machine rather than the suite.
+
+**The measurement half earned its keep in the same cycle.** `L.Find()` is about
+**4x slower on 516.1685 than on 516.1666**, per element rather than per call,
+reproduced on both machines with every control flat, including `L.Copy()`.
+Details in `docs/BYOND-PERF-SPEC.md` §3. Nothing here identifies which of the
+nineteen builds in the gap introduced it.
 
 The lookup, call and allocation rows use the discarded-unroll instrument,
 which cut the subtracted-baseline share of those rows from up to 40% to a few
