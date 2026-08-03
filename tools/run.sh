@@ -43,6 +43,18 @@ done
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 RESULTS="$ROOT/results"
 
+# Which source produced this result. Twelve Linux runs were discarded on
+# 2026-08-02 for having been built from a checkout two commits behind, and
+# nothing in the output said so: all twelve read 52 assertions and 0 failed.
+# A green summary cannot see a stale checkout, so the runner records the
+# commit and merge-runs.ps1 refuses to blend two of them, the way it already
+# refuses to blend builds and priorities. A dirty tree is stamped as such,
+# because "which commit" stops being an answer the moment the tree is edited.
+SOURCE_COMMIT=$(git -C "$ROOT" rev-parse --short HEAD 2>/dev/null || echo unknown)
+if [ "$SOURCE_COMMIT" != "unknown" ] && [ -n "$(git -C "$ROOT" status --porcelain -- suite tools 2>/dev/null)" ]; then
+    SOURCE_COMMIT="$SOURCE_COMMIT+dirty"
+fi
+
 if [ -n "${DMBENCH_BYOND:-}" ] && [ -d "$DMBENCH_BYOND" ]; then
     STANDALONE="$DMBENCH_BYOND"
 elif [ -d "$ROOT/byond-standalones" ]; then
@@ -253,6 +265,7 @@ for label in $targets; do
         printf '# runner_nice\t%s\n' "$achieved"
         printf '# stdout_binding\t%s\n' "$STDOUT_BINDING"
         printf '# host\t%s\n' "$(hostname)"
+        printf '# source_commit\t%s\n' "$SOURCE_COMMIT"
     } >> "$produced"
 
     cp "$produced" "$RESULTS/$(basename "$produced")"

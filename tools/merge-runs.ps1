@@ -74,6 +74,33 @@ if ($suites.Count -ne 1) { throw "runs are from different suites: $($suites -joi
 $prios = @($parsed | ForEach-Object { if ($_.Meta['runner_priority']) { $_.Meta['runner_priority'] } else { 'Normal' } } | Sort-Object -Unique)
 if ($prios.Count -ne 1) { throw "runs are from mixed priorities: $($prios -join ', ')" }
 
+# Two more measurement conditions that must not blend, added 2026-08-03.
+#
+# clock: converting a row from world.timeofday to world.tick_usage changes what
+# its resolution column means and moved two values about 15%, so a merge across
+# the conversion would average two instruments. This is also what makes a
+# cross-OS comparison safe downstream: gen-site.ps1 refuses to compare two
+# baselines whose clocks disagree, and it can only ask because the merge
+# records the answer.
+#
+# stdout_binding: how DreamDaemon's stdout is bound changes measured world.log
+# cost by about 20x (INSTRUMENTS.md). Runs predating the stamp record nothing
+# rather than guessing, and unstamped runs merge with each other as before.
+$conditions = @{}
+#
+# source_commit: twelve Linux runs were binned on 2026-08-02 for having been
+# built from a checkout two commits behind, and every one of them reported 52
+# assertions and 0 failed. Runs from different source cannot be one baseline.
+foreach ($key in @('clock', 'stdout_binding', 'source_commit')) {
+    $vals = @($parsed | ForEach-Object { $_.Meta[$key] } | Where-Object { $_ } | Sort-Object -Unique)
+    $stamped = @($parsed | Where-Object { $_.Meta[$key] }).Count
+    if ($vals.Count -gt 1) { throw "runs disagree on ${key}: $($vals -join ', ')" }
+    if ($vals.Count -eq 1 -and $stamped -ne $parsed.Count) {
+        throw "${key} is stamped in $stamped of $($parsed.Count) runs; an unstamped run cannot be assumed to match '$($vals[0])'"
+    }
+    if ($vals.Count -eq 1) { $conditions[$key] = $vals[0] }
+}
+
 # A run that died early would otherwise contribute its prefix and look merged.
 $counts = @($parsed | ForEach-Object { $_.Rows.Count } | Sort-Object -Unique)
 if ($counts.Count -ne 1) {
@@ -100,6 +127,9 @@ $lines.Add("# byond_version`t$($parsed[0].Meta['byond_version'])")
 $lines.Add("# byond_build`t$($parsed[0].Meta['byond_build'])")
 $lines.Add("# system`t$system")
 $lines.Add("# runner_priority`t$($prios[0])")
+foreach ($key in @('clock', 'stdout_binding', 'source_commit')) {
+    if ($conditions.ContainsKey($key)) { $lines.Add("# $key`t$($conditions[$key])") }
+}
 $lines.Add("# merged_runs`t$($parsed.Count)")
 # Each run writes the same filename inside its own directory, so the leaf alone
 # does not identify which run contributed what. Keep the parent.
