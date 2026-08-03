@@ -108,6 +108,27 @@ DME="$ROOT/suite/$SUITE.dme"
 [ -f "$DME" ] || { echo "no such suite: $DME" >&2; exit 1; }
 mkdir -p "$RESULTS"
 
+# One measurement at a time on a machine, enforced rather than assumed.
+#
+# Killing an SSH client does not kill the command it started, so twice on
+# 2026-08-02 a run kept going on this box after its local task was stopped and
+# competed with the replacement started moments later. Two del runs were
+# measured while a second del suite ran alongside them, which only came to
+# light by comparing file timestamps. A benchmark that silently shares the CPU
+# with another copy of itself reports numbers nobody can interpret.
+mkdir -p "$ROOT/build"
+LOCK="$ROOT/build/.run.lock"
+if [ -f "$LOCK" ]; then
+    holder=$(cat "$LOCK" 2>/dev/null)
+    if [ -n "$holder" ] && kill -0 "$holder" 2>/dev/null; then
+        echo "another run is in progress (pid $holder). Wait for it, or clear $LOCK if that process is gone." >&2
+        exit 1
+    fi
+    echo "stale lock from pid ${holder:-unknown}, taking it"
+fi
+echo $$ > "$LOCK"
+trap 'rm -f "$LOCK"' EXIT
+
 port=$PORT
 status=0
 
@@ -145,17 +166,22 @@ for label in $targets; do
     # terminal is line buffered. It is therefore a measurement condition and is
     # stamped into the result, not left to whoever ran it.
     log="$wd/$SUITE-stdout.log"
-    (
-        cd "$wd" || exit 1
-        case "$STDOUT_BINDING" in
-            file) "$bin/DreamDaemon" "$SUITE.dmb" "$port" -trusted -invisible > "$log" 2>&1 & ;;
-            tty)  "$bin/DreamDaemon" "$SUITE.dmb" "$port" -trusted -invisible & ;;
-            *)    echo "unknown --stdout binding: $STDOUT_BINDING" >&2; exit 2 ;;
-        esac
-        echo $! > "$wd/.ddpid"
-    )
-    ddpid=$(cat "$wd/.ddpid" 2>/dev/null)
-    rm -f "$wd/.ddpid"
+    # The PID is taken directly, not passed through a file. An earlier version
+    # launched inside a subshell and wrote $! to $wd/.ddpid for the parent to
+    # read back, which is a race: when the read lost, ddpid was empty, the wait
+    # loop below never ran, and the script carried on while the run was still
+    # going. That produced a 437 byte results file copied out of a run that had
+    # not finished writing it, and left an orphan DreamDaemon holding a port.
+    here=$(pwd)
+    cd "$wd" || { echo "cannot enter $wd" >&2; status=1; continue; }
+    case "$STDOUT_BINDING" in
+        file) "$bin/DreamDaemon" "$SUITE.dmb" "$port" -trusted -invisible > "$log" 2>&1 & ;;
+        tty)  "$bin/DreamDaemon" "$SUITE.dmb" "$port" -trusted -invisible & ;;
+        *)    echo "unknown --stdout binding: $STDOUT_BINDING" >&2; cd "$here"; exit 2 ;;
+    esac
+    ddpid=$!
+    cd "$here"
+    [ -n "$ddpid" ] || { echo "could not start DreamDaemon for $label" >&2; status=1; continue; }
 
     # Elevation, and the verification that it happened. `nice -n -5` prints a
     # permission error and then runs the command at normal priority anyway,
