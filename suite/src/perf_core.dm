@@ -75,17 +75,17 @@ proc
 			// is an operation, not a pure read.
 			#pragma push
 			#pragma ignore no_effect
-			var/t0 = world.timeofday
+			var/t0 = world.tick_usage
 			for(var/i = 1 to reps / UNROLL)
 				X10(needle in flat)
-			in_us["[n]"] = MeasureU("lists.in_n[n]", "lists", "needle in L, n=[n], worst case",
-				world.timeofday - t0, reps, UNROLL, null)
+			in_us["[n]"] = MeasureUTU("lists.in_n[n]", "lists", "needle in L, n=[n], worst case",
+				world.tick_usage - t0, reps, UNROLL, null)
 
-			var/t1 = world.timeofday
+			var/t1 = world.tick_usage
 			for(var/i = 1 to 20000000 / UNROLL)
 				X10(amap[needle])
-			assoc_us["[n]"] = MeasureU("lists.assoc_n[n]", "lists", "A\[needle\], n=[n]",
-				world.timeofday - t1, 20000000, UNROLL, null)
+			assoc_us["[n]"] = MeasureUTU("lists.assoc_n[n]", "lists", "A\[needle\], n=[n]",
+				world.tick_usage - t1, 20000000, UNROLL, null)
 			#pragma pop
 
 #ifdef BREAKCHECK
@@ -110,35 +110,35 @@ proc
 			"10:[round(assoc_us["10"],0.01)] 5000:[round(assoc_us["5000"],0.01)] us, against in at 5000 of [round(in_us["5000"],0.01)]")
 
 		// building, 100 elements
-		var/t2 = world.timeofday
+		var/t2 = world.tick_usage
 		for(var/i = 1 to 150000)
 			var/list/L = list()
 			for(var/j = 1 to 100)
 				L += j
-		Measure("lists.build_plus", "lists", "L = list(); L += j  x100", world.timeofday - t2, 150000, 0, "per 100-element list")
+		MeasureTU("lists.build_plus", "lists", "L = list(); L += j  x100", world.tick_usage - t2, 150000, 0, "per 100-element list")
 
-		var/t3 = world.timeofday
+		var/t3 = world.tick_usage
 		for(var/i = 1 to 150000)
 			var/list/L = list()
 			for(var/j = 1 to 100)
 				L.Add(j)
-		Measure("lists.build_add", "lists", "L = list(); L.Add(j)  x100", world.timeofday - t3, 150000, 0, "per 100-element list")
+		MeasureTU("lists.build_add", "lists", "L = list(); L.Add(j)  x100", world.tick_usage - t3, 150000, 0, "per 100-element list")
 
-		var/t4 = world.timeofday
+		var/t4 = world.tick_usage
 		for(var/i = 1 to 150000)
 			var/list/L = new(100)
 			for(var/j = 1 to 100)
 				L[j] = j
-		Measure("lists.build_prealloc", "lists", "L = new(100); indexed assign x100", world.timeofday - t4, 150000, 0, "per 100-element list")
+		MeasureTU("lists.build_prealloc", "lists", "L = new(100); indexed assign x100", world.tick_usage - t4, 150000, 0, "per 100-element list")
 
 		var/list/L100 = list()
 		for(var/i = 1 to 100) L100 += "k[i]"
 		CACC = 0
-		var/t5 = world.timeofday
+		var/t5 = world.tick_usage
 		for(var/i = 1 to 1500000)
 			var/list/C = L100.Copy()
 			CACC += C.len
-		Measure("lists.copy_100", "lists", "L.Copy(), 100 elements", world.timeofday - t5, 1500000, 0, null)
+		MeasureTU("lists.copy_100", "lists", "L.Copy(), 100 elements", world.tick_usage - t5, 1500000, 0, null)
 
 	// ---------------- dispatch ----------------
 
@@ -177,30 +177,30 @@ proc
 		#pragma push
 		#pragma ignore no_effect
 
-		var/t0 = world.timeofday
+		var/t0 = world.tick_usage
 		for(var/i = 1 to R / UNROLL)
 			X10(istype(W, /obj/pc_thing))
-		MeasureU("dispatch.istype", "dispatch", "istype(O, /obj/thing)", world.timeofday - t0, R, UNROLL, null)
+		MeasureUTU("dispatch.istype", "dispatch", "istype(O, /obj/thing)", world.tick_usage - t0, R, UNROLL, null)
 
-		var/t1 = world.timeofday
+		var/t1 = world.tick_usage
 		for(var/i = 1 to R / UNROLL)
 			X10(W.type == /obj/pc_thing)
-		MeasureU("dispatch.type_eq", "dispatch", "O.type == /obj/thing", world.timeofday - t1, R, UNROLL, null)
+		MeasureUTU("dispatch.type_eq", "dispatch", "O.type == /obj/thing", world.tick_usage - t1, R, UNROLL, null)
 
-		var/t2 = world.timeofday
+		var/t2 = world.tick_usage
 		for(var/i = 1 to R / UNROLL)
 			X10(W.flags & FLAG_A)
-		MeasureU("dispatch.bitfield", "dispatch", "O.flags & FLAG_A", world.timeofday - t2, R, UNROLL, null)
+		MeasureUTU("dispatch.bitfield", "dispatch", "O.flags & FLAG_A", world.tick_usage - t2, R, UNROLL, null)
 
-		var/t3 = world.timeofday
+		var/t3 = world.tick_usage
 		for(var/i = 1 to R / UNROLL)
 			X10(W.cats["weapon"])
-		MeasureU("dispatch.assoc_category", "dispatch", "O.cats assoc lookup", world.timeofday - t3, R, UNROLL, null)
+		MeasureUTU("dispatch.assoc_category", "dispatch", "O.cats assoc lookup", world.tick_usage - t3, R, UNROLL, null)
 
-		var/t4 = world.timeofday
+		var/t4 = world.tick_usage
 		for(var/i = 1 to R / UNROLL)
 			X10(locate(/obj/pc_thing) in W)
-		MeasureU("dispatch.locate_in_contents", "dispatch", "locate(type) in O, 1 item", world.timeofday - t4, R, UNROLL, null)
+		MeasureUTU("dispatch.locate_in_contents", "dispatch", "locate(type) in O, 1 item", world.tick_usage - t4, R, UNROLL, null)
 
 		// ---- istype scaling, VERIFICATION 6.1 ----
 		// The claim (O(1) since 514.1579) is about DEPTH and RELATEDNESS, and
@@ -213,25 +213,25 @@ proc
 		var/UD = new/obj/pc_d1/d2/d3/d4/d5/d6/d7/d8
 		var/US = new/obj/pc_d1
 
-		var/t5 = world.timeofday
+		var/t5 = world.tick_usage
 		for(var/i = 1 to R / UNROLL)
 			X10(istype(US, /obj/pc_d1))
-		var/it_d1 = MeasureU("dispatch.istype_d1", "dispatch", "istype, depth-1 hit, untyped var", world.timeofday - t5, R, UNROLL, null)
+		var/it_d1 = MeasureUTU("dispatch.istype_d1", "dispatch", "istype, depth-1 hit, untyped var", world.tick_usage - t5, R, UNROLL, null)
 
-		var/t6 = world.timeofday
+		var/t6 = world.tick_usage
 		for(var/i = 1 to R / UNROLL)
 			X10(istype(UD, /obj/pc_d1/d2/d3/d4/d5/d6/d7/d8))
-		var/it_d8 = MeasureU("dispatch.istype_d8", "dispatch", "istype, depth-8 exact hit", world.timeofday - t6, R, UNROLL, null)
+		var/it_d8 = MeasureUTU("dispatch.istype_d8", "dispatch", "istype, depth-8 exact hit", world.tick_usage - t6, R, UNROLL, null)
 
-		var/t7 = world.timeofday
+		var/t7 = world.tick_usage
 		for(var/i = 1 to R / UNROLL)
 			X10(istype(UD, /obj/pc_d1))
-		var/it_anc = MeasureU("dispatch.istype_ancestor", "dispatch", "istype, depth-8 instance vs depth-1 ancestor", world.timeofday - t7, R, UNROLL, null)
+		var/it_anc = MeasureUTU("dispatch.istype_ancestor", "dispatch", "istype, depth-8 instance vs depth-1 ancestor", world.tick_usage - t7, R, UNROLL, null)
 
-		var/t8 = world.timeofday
+		var/t8 = world.tick_usage
 		for(var/i = 1 to R / UNROLL)
 			X10(istype(US, /mob/pc_m1))
-		var/it_miss = MeasureU("dispatch.istype_unrelated", "dispatch", "istype, unrelated-branch miss", world.timeofday - t8, R, UNROLL, null)
+		var/it_miss = MeasureUTU("dispatch.istype_unrelated", "dispatch", "istype, unrelated-branch miss", world.tick_usage - t8, R, UNROLL, null)
 
 		#pragma pop
 
@@ -245,17 +245,17 @@ proc
 		var/Rt = 8000000
 		var/TSGUARD = 0
 
-		var/t9 = world.timeofday
+		var/t9 = world.tick_usage
 		for(var/i = 1 to Rt)
 			var/list/L = typesof(/mob/pc_m1)
 			if(L.len < 0) TSGUARD++
-		var/ts_d1 = Measure("dispatch.typesof_d1", "dispatch", "typesof, depth-1 mob type, 9 subtypes", world.timeofday - t9, Rt, 1, null)
+		var/ts_d1 = MeasureTU("dispatch.typesof_d1", "dispatch", "typesof, depth-1 mob type, 9 subtypes", world.tick_usage - t9, Rt, 1, null)
 
-		var/t10 = world.timeofday
+		var/t10 = world.tick_usage
 		for(var/i = 1 to Rt)
 			var/list/L = typesof(/mob/pc_m1/m2/m3/m4/m5/m6/m7/m8)
 			if(L.len < 0) TSGUARD++
-		var/ts_d8 = Measure("dispatch.typesof_d8", "dispatch", "typesof, depth-8 mob type, 1 subtype", world.timeofday - t10, Rt, 1, null)
+		var/ts_d8 = MeasureTU("dispatch.typesof_d8", "dispatch", "typesof, depth-8 mob type, 1 subtype", world.tick_usage - t10, Rt, 1, null)
 
 		if(TSGUARD) Row("# unreachable")
 
@@ -286,20 +286,20 @@ proc
 		// Unrolled, results discarded. A discarded call is emitted (it may
 		// have side effects), so no pragma is needed here; only pure
 		// expressions draw no_effect.
-		var/t0 = world.timeofday
+		var/t0 = world.tick_usage
 		for(var/i = 1 to R / UNROLL)
 			X10(PC_GlobalNoop())
-		MeasureU("calls.global_proc", "calls", "GlobalProc(), empty", world.timeofday - t0, R, UNROLL, null)
+		MeasureUTU("calls.global_proc", "calls", "GlobalProc(), empty", world.tick_usage - t0, R, UNROLL, null)
 
-		var/t1 = world.timeofday
+		var/t1 = world.tick_usage
 		for(var/i = 1 to R / UNROLL)
 			X10(H.Noop())
-		MeasureU("calls.datum_method", "calls", "D.Method(), empty", world.timeofday - t1, R, UNROLL, null)
+		MeasureUTU("calls.datum_method", "calls", "D.Method(), empty", world.tick_usage - t1, R, UNROLL, null)
 
-		var/t2 = world.timeofday
+		var/t2 = world.tick_usage
 		for(var/i = 1 to R / UNROLL)
 			X10(H.NoopDot())
-		MeasureU("calls.datum_method_dot", "calls", "D.Method(), sets . = 1", world.timeofday - t2, R, UNROLL, null)
+		MeasureUTU("calls.datum_method_dot", "calls", "D.Method(), sets . = 1", world.tick_usage - t2, R, UNROLL, null)
 
 		// The vars rows below stay in accumulator form PERMANENTLY. A
 		// discarded pure read (local, global, world.time, field) is
@@ -310,32 +310,32 @@ proc
 		// measuring a read.
 		var/lv = 5
 		CACC = 0
-		var/t3 = world.timeofday
+		var/t3 = world.tick_usage
 		for(var/o = 1 to 3)
 			for(var/i = 1 to 10000000)
 				CACC += lv
-		Measure("vars.local", "calls", "acc += local_var", world.timeofday - t3, 30000000, 1, null)
+		MeasureTU("vars.local", "calls", "acc += local_var", world.tick_usage - t3, 30000000, 1, null)
 
 		CACC = 0
-		var/t4 = world.timeofday
+		var/t4 = world.tick_usage
 		for(var/o = 1 to 3)
 			for(var/i = 1 to 10000000)
 				CACC += CGLOBAL
-		Measure("vars.global", "calls", "acc += global_var", world.timeofday - t4, 30000000, 1, null)
+		MeasureTU("vars.global", "calls", "acc += global_var", world.tick_usage - t4, 30000000, 1, null)
 
 		CACC = 0
-		var/t5 = world.timeofday
+		var/t5 = world.tick_usage
 		for(var/o = 1 to 3)
 			for(var/i = 1 to 10000000)
 				CACC += world.time
-		Measure("vars.world_time", "calls", "acc += world.time", world.timeofday - t5, 30000000, 1, null)
+		MeasureTU("vars.world_time", "calls", "acc += world.time", world.tick_usage - t5, 30000000, 1, null)
 
 		CACC = 0
-		var/t6 = world.timeofday
+		var/t6 = world.tick_usage
 		for(var/o = 1 to 3)
 			for(var/i = 1 to 10000000)
 				CACC += H.x
-		Measure("vars.datum", "calls", "acc += D.x", world.timeofday - t6, 30000000, 1, null)
+		MeasureTU("vars.datum", "calls", "acc += D.x", world.tick_usage - t6, 30000000, 1, null)
 
 	// ---------------- strings ----------------
 
@@ -345,18 +345,18 @@ proc
 		var/R = 5000000
 
 		CACC = 0
-		var/t0 = world.timeofday
+		var/t0 = world.tick_usage
 		for(var/i = 1 to R)
 			var/s = "[a][b]"
 			CACC += length(s)
-		Measure("strings.embed", "strings", "s = embedded expression", world.timeofday - t0, R, 1, null)
+		MeasureTU("strings.embed", "strings", "s = embedded expression", world.tick_usage - t0, R, 1, null)
 
 		CACC = 0
-		var/t1 = world.timeofday
+		var/t1 = world.tick_usage
 		for(var/i = 1 to R)
 			var/s = a + b
 			CACC += length(s)
-		Measure("strings.concat", "strings", "s = a + b", world.timeofday - t1, R, 1, null)
+		MeasureTU("strings.concat", "strings", "s = a + b", world.tick_usage - t1, R, 1, null)
 
 		// These two are timed with tick_usage: both routines are 2 to 4x
 		// cheaper on the Linux machine than on the Windows one, so at these
@@ -392,10 +392,10 @@ proc
 		// machinery. Live population stays at one either way, so this does
 		// not contaminate anything (and del() rows live in another process
 		// regardless).
-		var/t0 = world.timeofday
+		var/t0 = world.tick_usage
 		for(var/i = 1 to reps / UNROLL)
 			X10(new T)
-		MeasureU(id, "alloc", "new [T]", world.timeofday - t0, reps, UNROLL, null)
+		MeasureUTU(id, "alloc", "new [T]", world.tick_usage - t0, reps, UNROLL, null)
 
 	// ---------------- movement ----------------
 
@@ -407,24 +407,24 @@ proc
 		var/mob/M = new
 		M.loc = P1
 
-		var/t0 = world.timeofday
+		var/t0 = world.tick_usage
 		for(var/i = 1 to 6000000)
 			M.loc = (i % 2) ? P1 : P2
-		Measure("movement.loc_assign", "movement", "M.loc = T", world.timeofday - t0, 6000000, 1, "plain turf, no callbacks")
+		MeasureTU("movement.loc_assign", "movement", "M.loc = T", world.tick_usage - t0, 6000000, 1, "plain turf, no callbacks")
 
-		var/t1 = world.timeofday
+		var/t1 = world.tick_usage
 		for(var/i = 1 to 2000000)
 			M.Move((i % 2) ? P1 : P2)
-		Measure("movement.move_proc", "movement", "M.Move(T)", world.timeofday - t1, 2000000, 1, "plain turf, engine callbacks only")
+		MeasureTU("movement.move_proc", "movement", "M.Move(T)", world.tick_usage - t1, 2000000, 1, "plain turf, engine callbacks only")
 
 		// Overridden callbacks are a separate, more expensive case.
 		var/turf/pc_turf/A = new(locate(20, 20, 1))
 		var/turf/pc_turf/B = new(locate(21, 20, 1))
 		M.loc = A
-		var/t2 = world.timeofday
+		var/t2 = world.tick_usage
 		for(var/i = 1 to 2000000)
 			M.Move((i % 2) ? A : B)
-		Measure("movement.move_proc_overridden", "movement", "M.Move(T) with 4 overridden callbacks", world.timeofday - t2, 2000000, 1, "cost of user hooks on top of Move()")
+		MeasureTU("movement.move_proc_overridden", "movement", "M.Move(T) with 4 overridden callbacks", world.tick_usage - t2, 2000000, 1, "cost of user hooks on top of Move()")
 
 		// callbacks actually fire
 		MV_ENTER = 0; MV_EXIT = 0; MV_ENTERED = 0; MV_EXITED = 0

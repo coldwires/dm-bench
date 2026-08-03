@@ -1,0 +1,76 @@
+// Do the two clocks agree over the block lengths this suite actually uses?
+//
+// Written 2026-08-02, when converting the suite from world.timeofday to
+// world.tick_usage moved the view rows down 16 to 28% while the section's own
+// wall time moved only 12%. Either the machine got faster and the rows are
+// fine, or tick_usage under-counts on long blocks and the conversion is wrong.
+// That question cannot be answered by comparing runs taken minutes apart, so
+// this measures one workload with both clocks at once.
+//
+// Build:  byond-standalones\<build>\bin\dm.exe extras\clockcheck.dme
+// Run:    byond-standalones\<build>\bin\dd.exe extras\clockcheck.dmb <port> -trusted -invisible
+//         writes clockcheck-out.txt beside the .dmb
+//
+// The suite's blocks run from about 0.1 seconds to about 10. If the derived
+// us-per-percent holds across that range, tick_usage tracks wall time and the
+// conversion is sound. If it drifts with duration, it does not.
+
+var/global/OUT
+var/global/SINK = 0
+
+proc
+	Say(t)
+		if(!OUT) OUT = file("clockcheck-out.txt")
+		OUT << t
+
+	// One workload, both clocks, read as close together as possible.
+	Both(outer, inner)
+		var/acc = 0
+		var/tod0 = world.timeofday
+		var/tu0 = world.tick_usage
+		for(var/o = 1 to outer)
+			for(var/i = 1 to inner)
+				acc++
+		var/tu = world.tick_usage - tu0
+		var/tod = world.timeofday - tod0
+		if(acc < 0) Say("unreachable")
+		return list(tod, tu)
+
+world
+	fps = 20
+	loop_checks = 0
+	name = "clockcheck"
+
+	New()
+		..()
+		// tick_usage is frozen at a garbage value until the world starts
+		// ticking, so yield once before reading it (INSTRUMENTS.md).
+		spawn(1)
+			Say("byond [world.byond_version].[world.byond_build], tick_lag [world.tick_lag]")
+			Say("")
+			Say("target    timeofday_ds  tick_usage_pct   us_per_pct   wall_s")
+			// Roughly 0.15s, 0.7s, 1.5s, 3s, 7s, 15s of work.
+			for(var/list/pair in list(list(1, 2000000), list(1, 10000000), \
+				list(2, 10000000), list(4, 10000000), \
+				list(9, 10000000), list(20, 10000000)))
+				var/list/r = Both(pair[1], pair[2])
+				var/tod = r[1]
+				var/tu = r[2]
+				var/perpct = (tu > 0) ? (tod * 100000 / tu) : 0
+				Say("[pair[1]]x[pair[2]]  [tod]  [round(tu, 0.01)]  [round(perpct, 0.01)]  [round(tod / 10, 0.01)]")
+			Say("")
+			Say("A conversion factor that holds across the rows is tick_usage")
+			Say("tracking wall time. One that falls as the block lengthens means")
+			Say("tick_usage is losing time and every converted row is understated.")
+			Say("done")
+			sleep(5)
+			shutdown()
+// BEGIN_INTERNALS
+// END_INTERNALS
+// BEGIN_FILE_DIR
+#define FILE_DIR .
+// END_FILE_DIR
+// BEGIN_PREFERENCES
+// END_PREFERENCES
+// BEGIN_INCLUDE
+// END_INCLUDE
