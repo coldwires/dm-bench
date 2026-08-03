@@ -1,0 +1,39 @@
+// animate() supersession suite. Separate process on purpose.
+//
+// Build:  DreamMaker suite_animate.dme
+// Run:    DreamDaemon suite_animate.dmb <port> -trusted -invisible
+// Output: results-<version>.<build>-<system>-animate.tsv, named by the engine
+//
+// The mechanism under test grows engine state without bound by design, and the
+// historic endpoint of the original report was a network overflow. It cannot
+// share a world with rows anybody trusts, on the suite_del.dme precedent.
+//
+// This suite sleeps through several thousand ticks by construction: the
+// accumulation it looks for happens across ticks, not inside one. Expect about
+// four minutes per arm and three arms.
+
+#include "src\framework.dm"
+#include "src\perf_animate.dm"
+
+world
+	fps = 20
+	maxx = 100
+	maxy = 100
+	maxz = 1
+	turf = /turf
+	loop_checks = 0
+	name = "byond-canonical-suite-animate"
+
+	New()
+		..()
+		spawn(1)
+			SUITE_TAG = "animate"
+			Header()
+			CalibrateClock()
+			CalibrateBaseline()
+			AssertDiscardedWorkStillCosts()
+			Suite_Animate()
+			Summary()
+			world.log << "animate suite complete: [PASSED] passed, [FAILED] failed"
+			sleep(5)
+			del(src)
