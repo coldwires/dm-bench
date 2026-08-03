@@ -1,26 +1,25 @@
 // animate() supersession: does the superseded-sequence queue still grow?
 //
-// The claim under test, from a 2024 report by F0lak with analysis by LummoxJR:
-// calling animate() on an atom that is still mid-animation does not replace the
-// old sequence, it chains from wherever the old one had reached. Animating
-// every tick with a duration longer than a tick therefore builds
-// ((A->B, 0.5) -> C, 0.5) -> D and so on without bound, and both server and
-// client pay for the growing list.
+// The claim under test: calling animate() on an atom that is still
+// mid-animation does not replace the old sequence, it chains from wherever the
+// old one had reached. Animating every tick with a duration longer than a tick
+// therefore builds ((A->B, 0.5) -> C, 0.5) -> D and so on without bound, and
+// both server and client pay for the growing list.
 //
-// 516.1656 says "Superseded animation sequences behaved erratically. (F0lak)".
-// A release note can say the visible symptom was fixed; it cannot say the
-// accumulation was. LummoxJR's own analysis separates the two, describing a
-// bypass that would hide this specific test case without addressing the
-// mechanism. So the question this harness answers is not "is it fixed" but
-// "did the fix fix it".
+// 516.1656 records that superseded animation sequences behaved erratically and
+// were fixed. A release note can say the visible symptom was fixed; it cannot
+// say the accumulation was, and the published analysis separates the two,
+// describing a bypass that would hide this specific test case without
+// addressing the mechanism. So the question this harness answers is not "is it
+// fixed" but "did the fix fix it".
 //
 // The measurement is an ordering claim over time, which needs no tolerance on
 // any absolute: the workload in every window is identical, 1,000 animate()
 // calls per tick, so a healthy engine costs the same in the last window as in
 // the first. Growth across windows is the accumulation alive.
 //
-// Two controls, both escape hatches LummoxJR named as fixing the problem:
-// ANIMATION_END_NOW and ANIMATION_PARALLEL. If the plain arm grows while the
+// Two controls, both escape hatches the published analysis named as avoiding
+// the problem: ANIMATION_END_NOW and ANIMATION_PARALLEL. If the plain arm grows while the
 // controls stay flat, the mechanism is confirmed. If everything grows, this
 // harness is measuring something else and NO conclusion is allowed from it.
 //
@@ -60,9 +59,10 @@ proc
 
 		for(var/t = 1 to total)
 			// Ping-pong between two DIFFERENT states. Animating A to A would
-			// let a do-nothing shortcut mask the mechanism: LummoxJR described
-			// counting an exhausted sequence as free to supersede, which would
-			// fix this test case without fixing the underlying issue.
+			// let a do-nothing shortcut mask the mechanism. The published
+			// analysis describes counting an exhausted sequence as free to
+			// supersede, which would fix a test case without fixing the
+			// underlying issue.
 			var/target = (t % 2) ? 16 : 0
 			var/tu0 = world.tick_usage
 			switch(mode)

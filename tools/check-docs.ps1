@@ -400,6 +400,63 @@ foreach ($d in $docs) {
 }
 Good "dash style checked"
 
+# ------------------------------------------------------- 5. provenance leaks
+#
+# The rule: the public record is hypothesis, test, empirical data. Not who said
+# it, not where the claim was found, not which channel or which person. That
+# belongs in the operating notes.
+#
+# It was a written rule for weeks and it was broken anyway, in source comments
+# rather than in documents, which is where nobody was looking: a harness added
+# on 2026-08-03 credited a reporter and the engine author five times, and two
+# older files had been carrying attributions since before the rule existed. A
+# rule with an exit code beats a rule written down, which this project has now
+# learned four times.
+#
+# The term list lives in working/, untracked, because writing the handles into
+# a tracked file to prove they are absent from tracked files would publish the
+# very thing being stripped. So this check is armed locally, where the
+# pre-commit run happens, and unarmed in a clone. It says which it is rather
+# than passing silently.
+$denyPath = Join-Path $Root "working\provenance-denylist.txt"
+if (-not (Test-Path $denyPath)) {
+    Note "provenance check unarmed: no working/provenance-denylist.txt. Expected in a clone; the list does not ship."
+} else {
+    $terms = @(Get-Content $denyPath | ForEach-Object { $_.Trim() } |
+               Where-Object { $_ -and -not $_.StartsWith('#') })
+    if ($terms.Count -eq 0) {
+        Note "provenance check unarmed: the denylist is empty"
+    } else {
+        # Everything git tracks, which is exactly the definition of public.
+        # Baselines are excluded: they are engine output, and a term appearing
+        # there would be a row id rather than an attribution.
+        # Leading word boundary only. Both ends would miss a handle carrying a
+        # suffix, which is how the engine author's name is usually written, and
+        # no boundary at all would flag "authors" for containing a short handle.
+        # Verified against both cases rather than reasoned about: the pattern
+        # was wrong in each direction once before it was right.
+        $termPatterns = @($terms | ForEach-Object { '\b' + [regex]::Escape($_) })
+        Push-Location $Root
+        $tracked = @(& git ls-files 2>$null | Where-Object { $_ -and $_ -notlike 'results/*' })
+        Pop-Location
+        $leaks = 0
+        foreach ($rel in $tracked) {
+            $full = Join-Path $Root $rel
+            if (-not (Test-Path $full -PathType Leaf)) { continue }
+            # Word boundaries, not substrings. A short handle is a substring of
+            # ordinary words, and "authors" contains one of these, so a
+            # substring match would fail the check on innocent prose and get
+            # itself disabled, which is how a check dies.
+            $hits = @(Select-String -Path $full -Pattern $termPatterns -AllMatches -ErrorAction SilentlyContinue)
+            foreach ($h in $hits) {
+                Bad "$rel line $($h.LineNumber): names a person or a channel in a tracked file. Provenance belongs in the notes."
+                $leaks++
+            }
+        }
+        if ($leaks -eq 0) { Good "no provenance in tracked files ($($terms.Count) terms checked)" }
+    }
+}
+
 # ------------------------------------------------------------------ verdict
 Write-Host ""
 if ($Fails -eq 0) { Write-Host "docs consistent"; exit 0 }
