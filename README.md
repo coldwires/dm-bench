@@ -234,10 +234,12 @@ Two rows in 118 exceed 25% spread on the measuring machine. On the desktop 19
 and 27 do, which is that machine rather than the suite.
 
 **The measurement half earned its keep in the same cycle.** `L.Find()` is about
-**4x slower on 516.1685 than on 516.1666**, per element rather than per call,
-reproduced on both machines with every control flat, including `L.Copy()`.
-Details in `docs/BYOND-PERF-SPEC.md` §3. Nothing here identifies which of the
-nineteen builds in the gap introduced it.
+**4x slower from 516.1674 onward**, per element rather than per call,
+reproduced on both machines with every control flat, including `L.Copy()`. The
+boundary was bisected across six builds: clean at 516.1673, regressed at
+516.1674, still regressed at 516.1685. Details in
+`docs/BYOND-PERF-SPEC.md` §3. No mechanism is offered, because this repository
+does not hold BYOND's release notes.
 
 The lookup, call and allocation rows use the discarded-unroll instrument,
 which cut the subtracted-baseline share of those rows from up to 40% to a few
