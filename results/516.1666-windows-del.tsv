@@ -1,30 +1,43 @@
-# suite	byond-canonical
+# suite	byond-canonical-del
 # byond_version	516
 # byond_build	1666
 # system	windows
-# tick_lag	0.5
-# min_ds	15
-kind	id	category	name	value	unit	expected	status	dt_ds	notes
-MEASURE	framework.empty_loop	framework	empty loop iteration	0.06	us			28	baseline, subtracted from sub-microsecond rows
-# baseline_us	0.06
-ASSERT	del.zero_refs_is_free	del	del() is free when only a local points at the victim	1		1	PASS		-1.67 us
-ASSERT	del.one_ref_costs	del	a single heap reference makes del() cost real time	1		1	PASS		8.33 us
-ASSERT	del.refcount_does_not_scale	del	256 references cost no more than 1	1		1	PASS		1 ref 8.33 us, 256 refs 10 us
-MEASURE	del.refs_0	del	del cost, 0 heap refs	-1.67	us				
-MEASURE	del.refs_1	del	del cost, 1 heap ref	8.33	us				
-MEASURE	del.refs_256	del	del cost, 256 heap refs	10	us				
-ASSERT	del.turfs_not_counted	del	map size does not affect del() cost	1		1	PASS		12.5 us at 10k turfs, 12.5 us at 48k turfs
-ASSERT	del.cumulative_alloc_irrelevant	del	allocating and freeing 500k objects does not change del() cost	1		1	PASS		10 us before, 12.5 us after
-MEASURE	del.live_0	del	del cost at 0 live objs	12.5	us				
-MEASURE	del.live_50000	del	del cost at 50000 live objs	83.33	us				
-MEASURE	del.live_100000	del	del cost at 100000 live objs	250	us				
-MEASURE	del.live_200000	del	del cost at 200000 live objs	2333.33	us				
-ASSERT	del.live_count_drives_cost	del	del() cost rises sharply with live object count	1		1	PASS		12.5 us cold vs 2333.33 us at 200k live
-ASSERT	del.peak_leaves_residual	del	freeing the population does not restore the cold cost	1		1	PASS		12.5 us cold, 165 us after 200k existed and were freed
-MEASURE	del.residual_after_peak	del	del cost after peak population freed	165	us				
+# runner_priority	High
+# clock	tick_usage
+# source_commit	f550d39
+# merged_runs	3
+# merged_from	D66_1\results-516.1666-windows-del.tsv D66_2\results-516.1666-windows-del.tsv D66_3\results-516.1666-windows-del.tsv
+kind	id	category	name	value	unit	expected	status	res	notes
+MEASURE	framework.empty_loop	framework	empty loop iteration	0.06	us				WIDE_SPREAD; n=3 min=0.06 max=0.08 spread=33%
+MEASURE	framework.bare_loop	framework	loop iteration, no accumulator	0.02	us				n=3 min=0.02 max=0.02 spread=0%
+ASSERT	framework.discarded_work_still_costs	framework	an expression whose result is unused is still executed	1		1	PASS		n=3 PASS/PASS/PASS; bare loop 1 ds, discarded istype 4 ds over 4000000
+ASSERT	del.zero_refs_is_free	del	del() is free when only a local points at the victim	1		1	PASS		n=3 PASS/PASS/PASS; 0.03 us
+ASSERT	del.one_ref_costs	del	a single heap reference makes del() cost real time	1		1	PASS		n=3 PASS/PASS/PASS; 8.87 us
+ASSERT	del.refcount_does_not_scale	del	256 references cost far less than 256x one	1		1	PASS		n=3 PASS/PASS/PASS; 1 ref 8.87 us, 256 refs 10.25 us
+MEASURE	del.refs_0	del	del cost, 0 heap refs	0.03	us				LOW_RESOLUTION; WIDE_SPREAD; n=3 min=0.02 max=0.03 spread=33%
+MEASURE	del.refs_1	del	del cost, 1 heap ref	8.97	us				n=3 min=8.87 max=9.23 spread=4%
+MEASURE	del.refs_256	del	del cost, 256 heap refs	10.3	us				n=3 min=8.72 max=10.3 spread=15%
+ASSERT	del.accounted_ref_is_free	del	del through the ref's own list slot skips the scan	1		1	PASS		n=3 PASS/PASS/PASS; 0.2 us via del(H[1]) vs 8.87 us with an unaccounted ref
+MEASURE	del.ref_via_index	del	del cost, sole ref indexed by the del expression	0.2	us				n=3 min=0.2 max=0.22 spread=10%
+MEASURE	del.turfs_10k	del	del cost at 10k turfs	8.9	us				n=3 min=8.88 max=9.41 spread=6%
+MEASURE	del.turfs_48k	del	del cost at 48k turfs	9.05	us				n=3 min=8.81 max=9.26 spread=5%
+ASSERT	del.turfs_not_counted	del	map size does not affect del() cost	1		1	PASS		n=3 PASS/PASS/PASS; 8.9 us at 10k turfs, 9.05 us at 48k turfs
+MEASURE	del.before_churn	del	del cost before 500k churn	9.59	us				n=3 min=9.18 max=10.9 spread=18%
+MEASURE	del.after_churn	del	del cost after 500k churn	9.74	us				n=3 min=9.21 max=11.2 spread=20%
+ASSERT	del.cumulative_alloc_irrelevant	del	allocating and freeing 500k objects does not change del() cost	1		1	PASS		n=3 PASS/PASS/PASS; 9.18 us before, 9.21 us after
+MEASURE	del.live_0	del	del cost at 0 live objs	9.81	us				n=3 min=9.4 max=11 spread=16%
+MEASURE	del.live_50000	del	del cost at 50000 live objs	94.6	us				WIDE_SPREAD; n=3 min=76.1 max=133.9 spread=61%
+MEASURE	del.live_100000	del	del cost at 100000 live objs	261	us				WIDE_SPREAD; n=3 min=163.8 max=500.8 spread=129%
+MEASURE	del.live_200000	del	del cost at 200000 live objs	1452.8	us				WIDE_SPREAD; n=3 min=1294.3 max=2154.1 spread=59%
+ASSERT	del.live_count_drives_cost	del	del() cost rises sharply with live object count	1		1	PASS		n=3 PASS/PASS/PASS; 9.4 us cold vs 1294.29 us at 200k live
+MEASURE	del.live_300000	del	del cost at 300000 live objs	2563.9	us				WIDE_SPREAD; n=3 min=2506.9 max=4059.9 spread=61%
+ASSERT	del.population_sweep_monotonic	del	del() cost rises at every step of the population sweep	1		1	PASS		n=3 PASS/PASS/PASS; 0:9.4 50k:76.11 100k:163.81 200k:1294.29 300k:2506.86 us
+ASSERT	del.peak_leaves_residual	del	freeing the population does not restore the cold cost	1		1	PASS		n=3 PASS/PASS/PASS; 9.4 us cold, 158.61 us after 300k existed and were freed
+MEASURE	del.residual_after_peak	del	del cost after peak population freed	161.2	us				WIDE_SPREAD; n=3 min=158.6 max=229.6 spread=44%
 
-# passed	7
+# passed	10
 # failed	0
-# measured	9
-# low_resolution	0
+# unstable	0
+# measured	16
+# wide_spread	7
 # result	PASS
