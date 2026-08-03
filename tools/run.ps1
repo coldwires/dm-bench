@@ -37,6 +37,24 @@ $Root      = Split-Path $PSScriptRoot -Parent
 $Standalone = Join-Path $Root "byond-standalones"
 $ResultsDir = Join-Path $Root "results"
 
+# Which source produced this result. Twelve Linux runs were discarded on
+# 2026-08-02 for having been built from a checkout two commits behind, and
+# nothing in the output said so: all twelve read 52 assertions and 0 failed. A
+# green summary cannot see a stale checkout, so the runner records the commit
+# and merge-runs.ps1 refuses to blend two of them, the way it already refuses
+# to blend builds and priorities. A tree with edits under suite/ or tools/ is
+# stamped dirty, because "which commit" stops being an answer once the source
+# has been edited; doc edits do not count, since they cannot change what ran.
+$SourceCommit = 'unknown'
+try {
+    $sha = & git -C $Root rev-parse --short HEAD 2>$null
+    if ($LASTEXITCODE -eq 0 -and $sha) {
+        $SourceCommit = $sha.Trim()
+        $dirty = & git -C $Root status --porcelain -- suite tools 2>$null
+        if ($dirty) { $SourceCommit = "$SourceCommit+dirty" }
+    }
+} catch { $SourceCommit = 'unknown' }
+
 function Get-Builds {
     if (-not (Test-Path $Standalone)) { throw "no byond-standalones directory at $Standalone" }
     $found = @()
@@ -152,7 +170,7 @@ foreach ($b in $targets) {
         }
         # The suite cannot see its own process priority, so the runner stamps
         # it. merge-runs.ps1 refuses to merge runs of mixed priority.
-        [System.IO.File]::AppendAllText($f.FullName, "# runner_priority`t$Priority`r`n", (New-Object System.Text.UTF8Encoding($false)))
+        [System.IO.File]::AppendAllText($f.FullName, "# runner_priority`t$Priority`r`n# source_commit`t$SourceCommit`r`n", (New-Object System.Text.UTF8Encoding($false)))
         Copy-Item $f.FullName (Join-Path $ResultsDir $f.Name) -Force
         $res = (Select-String -Path $f.FullName -Pattern '^# (passed|failed|measured|low_resolution|result)\s+(\S+)') |
                ForEach-Object { "{0}={1}" -f $_.Matches.Groups[1].Value, $_.Matches.Groups[2].Value }
