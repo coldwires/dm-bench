@@ -15,7 +15,8 @@ Measured cost of common BYOND operations.
 - **Figures are printed at the precision the harness emits, which is finer than the measurement supports.** Repeatability is about 2% on the measuring machine, but that is not the same as accuracy: sub-microsecond rows subtract a calibrated baseline, and values are emitted at two decimals, so a row reading 0.12 cannot express a difference finer than about 8% whatever the machine does. **Do not read 0.12 against 0.13 as a difference.** Ratios between rows measured close together are sounder than absolutes, since the arms share machine conditions.
 - **A ratio only travels when both of its arms are bounded by the same resource.** Computation against computation transfers between machines; buffered logging against an unbuffered file write does not, and section 11b is what that looks like when measured on two operating systems.
 - Where two snippets are claimed equivalent, the harness asserts matching output counts and prints the result.
-- Harnesses: `suite.dme`, `suite_del.dme` and `suite_animate.dme`. Sections 1 through 10, 11b, 13 and 14 regenerate from them. **What does not regenerate is named where it appears rather than left for a reader to discover**: the `extras/respawn.dme` line in section 8, two side observations in section 14, and section 12 entire, which needs a remote server and a second machine driving real clients and cannot be produced by any automated run here. Section 11 was withdrawn instead of carried, and its place is kept so the removal is visible.
+- Harnesses: `suite.dme` and `suite_del.dme`. **Every figure on this page regenerates from them**, with one stated exception: section 12 needs a remote server and a second machine driving real clients, so no automated run here can produce it, and it says so at its head. Everything else that could not be reproduced was withdrawn on 2026-08-03 rather than carried behind a banner, including section 11 entire, whose heading is kept so the removal is visible.
+- **What the suite does not cover is stated too**, in "What this does not measure" near the end. Silence there is not evidence that a thing is cheap.
 
 **Regenerated 2026-08-03, and the figures moved.** Sections 1 through 11b now
 come from the measuring machine rather than the desktop, and every measured row
@@ -524,8 +525,12 @@ The step that is real is datum to obj, 0.25 to 0.46, a type distinction with
 no vars added. That gap is 1.8x and survives on both machines. One var on a
 datum adds nothing measurable, 0.25 against 0.26.
 
-A mob with 30 vars and 3 lists measured 2.6 µs by the unported respawn
-harness; indicative only, per the harness note at the top of this page.
+A figure for a mob carrying 30 vars and 3 lists was withdrawn on 2026-08-03.
+It came from a harness that is not in this repository, and it could not have
+settled the question it was quoted for anyway: a mob with both cannot separate
+the cost of declaring vars from the cost of initialising lists, which is the
+distinction worth measuring. Splitting it into 30-vars-no-lists against
+3-lists-no-vars would answer it.
 
 ---
 
@@ -816,12 +821,16 @@ them to FAIL: `numeric.eq_at_2p24`, `numeric.increment_stalls`,
 `numeric.bitfield_23_survives` against `numeric.bitfield_24_lost`. All pass on
 516.1666 and 516.1685.
 
-Two observations below are **not** covered by any assertion here and come from
-`numlimits.dme`, which is not in the tree: the `num2text` switch to scientific
-notation, and the `as` reserved word, which is a compile-time behaviour this
-suite has no way to assert on at runtime. The bit round-trip table lists bits
-the suite does not individually assert; 23 and 24 are the boundary and are the
-two that are tested.
+**Two observations were withdrawn from this section on 2026-08-03**: the
+`num2text` switch to scientific notation above the bound, and the fact that
+`as` cannot be used as a variable name. Both came from a harness that is not
+in this repository, so neither could be reproduced here, and this page does not
+carry figures nobody can check. The first is a runtime behaviour and is a
+straightforward assertion for whoever adds it. The second is compile-time and
+this suite has no way to assert on it at runtime at all.
+
+The bit round-trip table below lists bits the suite does not individually
+assert; 23 and 24 are the boundary and are the two that are tested.
 
 ### Integers stop advancing at exactly 2^24
 
@@ -831,12 +840,12 @@ two that are tested.
 
 `n + 1 == n` first holds at n = 16,777,216. 16,777,217 is not representable and rounds down.
 
-Above the bound, `num2text` switches to scientific notation:
-
-```dm
-"[16777216]"                    // "16777216"
-"[16777218]"                    // "1.67772e+07"
-```
+Above the bound, string interpolation has been observed switching to
+scientific notation, so `"[16777218]"` reads as `1.67772e+07` rather than as
+digits. **Withdrawn as a figure**, because the harness that produced it is not
+in this repository. It is recorded here as a thing to watch for rather than as
+something this project has measured, and it is a straightforward assertion for
+whoever adds it.
 
 ### Loops past the bound do not terminate
 
@@ -885,7 +894,48 @@ Shifting past bit 23 produces a mask of **zero**, not a large number. A flag def
 
 ### Reserved words
 
-`as` cannot be used as a variable name. `var/list/as = list()` fails to compile with "missing left-hand argument to =".
+Withdrawn 2026-08-03. This section stated that `as` cannot be used as a
+variable name. The observation came from a harness that is not in this
+repository, and it is compile-time behaviour that no runtime assertion here
+could cover, so it is removed rather than carried on trust.
+
+---
+
+## What this does not measure
+
+Stated so it is a declared scope rather than something a reader discovers by
+looking for a number that is not here. The suite covers eleven families well.
+It is silent on a great deal, and silence here is not evidence that a thing is
+cheap.
+
+**Not covered at all.** `animate()` and the appearance system, icons and icon
+generation, maptext, matrices, sound, savefiles, regular expressions and the
+rest of string manipulation beyond the four operations in §7, `..()` parent
+calls, `pick()`, `Cut()` against reassignment, and luminosity.
+
+**Covered in one direction only.** §2 measures `del()` in isolation, and
+deliberately: it is the only way to keep the population residual from
+corrupting everything else in the process. The case that matters most in
+practice, deletion while a large number of procs sleep in the scheduler, needs
+a third manifest and has never been measured here. That gap has been open since
+2026-07-30 and it is the one this project most wants closed.
+
+**Cannot be measured here at all.** Anything needing a connected client:
+maptext round-trips, `GetMapIcons` scaling, icon frame count against client
+load, client-side dir changes. One machine hosts one real key plus one guest,
+because BYOND identifies clients by ckey and a second connection presenting an
+existing key evicts the first. §12 is what a two-machine measurement looks
+like, and why it does not regenerate from this repository.
+
+**Memory is not measured.** Nothing in DM exposes allocation size, so claims
+about storage layout, turf memory or the first-var hashtable cannot be tested
+by any timing harness. Answering them needs an external sampler reading the
+process's private bytes, written once per operating system, and that does not
+exist here.
+
+Two builds are covered, 516.1666 and 516.1685. A claim that something changed
+in a particular build needs the builds either side of it, which is a matter of
+fetching them rather than of writing tests.
 
 ---
 
