@@ -1,0 +1,88 @@
+name: dm-bench site
+
+# The publication loop this project is built around: a new BYOND release comes
+# out, the suite runs against it, the baseline is committed, and this rebuilds
+# the page from that baseline. The repository is the database; nothing here
+# holds state of its own.
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - 'results/**'
+      - 'site/**'
+      - 'suite/src/**'
+      - '.github/workflows/site.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# A run in flight should finish rather than be cancelled by the next commit,
+# so a page is never published from a half-built artifact.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # The same gate used before every commit locally: counts quoted in prose
+      # must match the baselines, cross-references must resolve, and a public
+      # document must not cite a file that does not ship. In a clone the
+      # operating notes are absent and it says so rather than failing.
+      - name: Documents agree with the data
+        shell: pwsh
+        run: ./tools/check-docs.ps1
+
+      # The committed page must match the data it claims to come from. The
+      # generator reads the suite source for its code snippets as well as the
+      # baselines, so a page can go stale from either side, and hand-editing
+      # the HTML is the failure this catches. The generated-on line is
+      # excluded because it changes every day by design.
+      - name: Page matches the baselines it was generated from
+        shell: pwsh
+        run: |
+          $tmp = Join-Path $env:RUNNER_TEMP 'drift.html'
+          ./site/gen-site.ps1 -Out $tmp | Out-Null
+          $strip = { param($p) (Get-Content $p) -notmatch '^<p class="mono">Generated ' }
+          $fresh = & $strip $tmp
+          $committed = & $strip './site/index.html'
+          if (Compare-Object $fresh $committed) {
+            Write-Error 'site/index.html does not match what gen-site.ps1 produces from the checked-in baselines. Run .\site\gen-site.ps1 and commit the result; never hand-edit the HTML.'
+            exit 1
+          }
+          'page matches the baselines'
+
+      # Built into a staging directory so the published root holds the page and
+      # the data behind it. DataHref is passed explicitly: the links have to
+      # resolve against wherever Pages serves from, which is not the same as
+      # the repository layout.
+      - name: Build the site
+        shell: pwsh
+        run: |
+          $out = Join-Path $env:GITHUB_WORKSPACE '_site'
+          New-Item -ItemType Directory -Path $out -Force | Out-Null
+          New-Item -ItemType Directory -Path (Join-Path $out 'results') -Force | Out-Null
+          ./site/gen-site.ps1 -Out (Join-Path $out 'index.html') -DataHref 'results'
+          Copy-Item 'results/*.tsv' (Join-Path $out 'results') -Force
+          '{0} baselines published beside the page' -f (Get-ChildItem (Join-Path $out 'results')).Count
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
