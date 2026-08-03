@@ -199,8 +199,8 @@ withheld on this machine, and that is the guard working rather than a gap in
 the data.** Its figure is a difference between two timed blocks, and this
 machine deletes fast enough that the difference is no longer large compared
 with the error of the two arms it comes from, so `MeasureDelta()` flags it
-`SUBTRACTION_NOISE`. The slower machine resolves it and reads 13.4 µs against
-10.9 for a single reference, roughly 1.2x, with the widest spread of any row
+`SUBTRACTION_NOISE`. The slower machine resolves it and reads 10.3 µs against
+8.97 for a single reference, roughly 1.15x, with the widest spread of any row
 in the suite.
 
 So the design guidance stands on the cross-check rather than on the primary
@@ -237,17 +237,22 @@ Growth is superlinear above 50,000 on both builds and on both machines, and
 `del.population_sweep_monotonic` asserts that ordering rather than leaving it
 to a reader comparing five rows.
 
-**How superlinear is a property of the machine, not of the engine, and this is
-the sharpest example on the page.** Going from 50,000 to 300,000 live objects,
-a 6x increase in population, costs **12.7x** the time here and **40x** on the
-Windows desktop, whose absolute figures at 300,000 are 3,830 µs against this
-machine's 1,090. The scan is a memory walk, so its slope belongs to the cache
-hierarchy and memory bandwidth of whatever is running it. Carry the shape,
-which is that deletion cost climbs faster than population; do not carry either
-coefficient onto your own hardware.
+**How superlinear is a property of the machine and the moment, not of the
+engine, and this is the sharpest example on the page.** Going from 50,000 to
+300,000 live objects, a 6x increase in population, costs **12.7x** the time
+here and **27x** on the Windows desktop, whose absolute figure at 300,000 is
+2,564 µs against this machine's 1,090.
+
+**That desktop coefficient is not even stable across sittings.** The same three
+runs taken two days earlier, on the same clock and the same build, gave 40x and
+3,830 µs. Nothing changed but the hour. The scan is a memory walk, so its slope
+belongs to the cache hierarchy, the memory bandwidth and whatever else that
+machine was doing. **Carry the shape, which is that deletion cost climbs faster
+than population. Do not carry any coefficient on this page onto your own
+hardware, including the one measured here.**
 
 At 300,000 live objs and `tick_lag 0.5`, roughly 46 deletions consume the tick
-here, and roughly 13 on the desktop. Both numbers say the same thing about
+here and roughly 20 on the desktop. Both numbers say the same thing about
 design.
 
 ### Turfs are not counted
@@ -286,15 +291,15 @@ only concurrent population counts.
 Freeing the population does not restore the cold cost. Whatever structure the
 scan walks grows with peak concurrent live count and never shrinks. **A
 one-off population spike raises `del()` cost about 54x here for the remaining
-life of the process, and about 19x on the desktop.** The residual itself lands
-at nearly the same absolute figure on both machines, 197 µs against 203, which
-is a coincidence of two different slopes rather than a portable constant and
-should not be read as one.
+life of the process, and about 16x on the desktop.** The two machines differ on
+the multiple for the same reason they differ on everything else in this
+section: their cold costs are 3.7 µs and 9.8 µs, so the same residual structure
+prices differently against each.
 
 ### Alternative
 
 ```dm
-del(thing)          // ~1,090 µs at 300k live objs here, ~3,800 on the desktop
+del(thing)          // ~1,090 µs at 300k live objs here, ~2,560 on the desktop
 thing = null        // no scan, no population sensitivity
 ```
 
@@ -953,7 +958,7 @@ builds, and each names the section it comes from.
 | Associative list instead of `in` at 5,000 entries | 50x here, 74x on the desktop | §3 |
 | `+=` instead of `.Add()` for list building | 1.5x | §4 |
 | `world.log` instead of a direct file write | 4.4x here, 45.9x on Windows; platform-conditional, and only when stdout is not a file | §11b |
-| Dropping the last reference instead of `del()` at 300k live objects | `del()` alone costs 1,090 µs here and 3,830 on the desktop; the ratio is not quoted, see §2 | §2 |
+| Dropping the last reference instead of `del()` at 300k live objects | `del()` alone costs 1,090 µs here and 2,560 on the desktop; the ratio is not quoted, see §2 | §2 |
 
 Two rules were dropped from this table on 2026-08-01 rather than restated:
 "push from the event instead of polling", whose 9.2 to 9.6x comes from the
