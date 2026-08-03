@@ -1,9 +1,9 @@
 // Call overhead by kind, and whether world.Profile() can be trusted.
 //
-// Claim under test, from Lummox JR (BYOND author):
-//   "default hard procs have a smidge less overhead than regular procs because
-//    they're not running user code, so they don't spin up Proc and ProcData
-//    structs. They do however copy args."
+// Claim under test, stated by the engine author:
+//   default hard procs carry slightly less overhead than regular procs,
+//   because they do not run user code and so do not spin up Proc and ProcData
+//   structs. They do still copy arguments.
 //
 // Two testable predictions:
 //   1. A hard-called builtin costs less per call than a user-defined proc.

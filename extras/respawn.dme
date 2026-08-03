@@ -93,7 +93,7 @@ mob/loaded
 // ---------- respawn strategies ----------
 
 proc
-	// Hors: swap the handle, mob untouched
+	// Swap the handle, mob untouched
 	respawn_handle(mob/loaded/m)
 		m.target?.loc = null
 		var/effect/target/t = new
@@ -215,7 +215,7 @@ proc
 			var/effect/target/t = new
 			t.loc = m
 			m.target = t
-			t.loc = null       // clear contents first (Lummox)
+			t.loc = null       // clear contents first, or the pair leaks
 			m.loc = null
 			m = null
 			t = null
