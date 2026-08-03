@@ -21,10 +21,10 @@ proc
 	// whatever is measured next.
 	IO_Reference(reps)
 		IOACC = 0
-		var/t0 = world.timeofday
+		var/tu0 = world.tick_usage
 		for(var/i = 1 to reps)
 			IOACC += i % 7
-		return world.timeofday - t0
+		return world.tick_usage - tu0
 
 	// Median of three passes, in us per iteration. A single pass of this
 	// reference is not stable enough to compare against.
@@ -32,7 +32,7 @@ proc
 		var/a = IO_Reference(reps)
 		var/b = IO_Reference(reps)
 		var/c = IO_Reference(reps)
-		return Median3(a, b, c) * 100000 / reps
+		return Median3(a, b, c) * US_PER_PCT / reps
 
 	// One timed pass of `reps` writes of `line` to `f`, in percent of a tick.
 	//

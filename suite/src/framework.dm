@@ -31,6 +31,10 @@ var/global/FAILED = 0
 var/global/MEASURED = 0
 var/global/LOWRES = 0
 var/global/HEAVY = 0
+// tick_usage rows whose block ran under MIN_BLOCK_PCT. Advisory, see the
+// constant's comment: the number is not wrong, it was measured over a short
+// enough window that its spread is the thing to read.
+var/global/SHORTBLOCK = 0
 
 // Every measurement should run this long. Below it, world.timeofday's 0.1s
 // resolution dominates and the number is noise. Rows under this are flagged.
@@ -62,6 +66,22 @@ var/global/US_PER_PCT = 0
 // A tick_usage delta below this is under-resolved. At 5% the observed spread
 // was 8%, at 23% it was 5.7%. Rows under MIN_PCT are flagged.
 #define MIN_PCT 20
+
+// Advisory floor for a tick_usage row, in percent of a tick.
+//
+// MIN_DS is 1.5 seconds. MIN_PCT is 20 percent of a tick, which at tick_lag
+// 0.5 is 10 milliseconds, so moving a row from the wall clock to tick_usage
+// weakens its resolution guard by 150x. That is mostly fine, because
+// tick_usage has no quantum and a short block is noisy rather than
+// unresolvable, and noise is what three runs and a published spread are for.
+// What is lost is the signal that a row was not repeated enough to mean much,
+// which the old floor provided as a side effect.
+//
+// So this is advisory rather than disqualifying, like BASELINE_HEAVY: 200
+// percent of a tick is about 0.1 second of measurement. It cannot be set
+// higher without re-breaking what the conversion fixed, since the Linux
+// file-write rows legitimately measure about 170 percent.
+#define MIN_BLOCK_PCT 200
 
 // A difference carries the error of BOTH arms, so a small delta between two
 // large arms is noise even when each arm is individually well resolved. That is
@@ -196,18 +216,66 @@ proc
 		Row("MEASURE\t[id]\t[category]\t[name]\t[val >= 10 ? round(val,0.1) : round(val,0.01)]\tus\t\t\t[dt]\t[n]")
 		return val
 
+	// The unrolled, result-discarded row measured with tick_usage. Same
+	// contract as MeasureU, which it mirrors line for line: `unroll` is the
+	// factor the loop body was repeated by, `reps` is the total operation
+	// count, and BASE_LOOP_US/unroll is subtracted rather than BASE_US,
+	// because the measured loop carries no accumulator.
+	//
+	// The subtracted term stays in microseconds and comes from the wall-clock
+	// calibration. That is deliberate: it is a cost per loop iteration, and
+	// which clock observed it does not change what it is.
+	MeasureUTU(id, category, name, pct, reps, unroll, notes)
+		var/raw = pct * US_PER_PCT / reps
+		var/base = BASE_LOOP_US / max(unroll, 1)
+		var/val = raw - base
+		var/flag = ""
+		if(val <= 0)
+			val = 0
+			flag = "BELOW_BASELINE"
+		else if(raw > 0 && (base / raw) > BASELINE_HEAVY_FRAC)
+			flag = "BASELINE_HEAVY"
+		MEASURED++
+		if(pct < MIN_PCT)
+			flag = "LOW_RESOLUTION"
+		else if(pct < MIN_BLOCK_PCT && flag != "BELOW_BASELINE")
+			flag = "SHORT_BLOCK"
+		if(flag == "LOW_RESOLUTION" || flag == "BELOW_BASELINE") LOWRES++
+		else if(flag == "BASELINE_HEAVY") HEAVY++
+		else if(flag == "SHORT_BLOCK") SHORTBLOCK++
+		var/n = notes ? notes : ""
+		n = n ? "u=[unroll]; [n]" : "u=[unroll]"
+		if(flag) n = "[flag]; [n]"
+		Row("MEASURE\t[id]\t[category]\t[name]\t[val >= 10 ? round(val,0.1) : round(val,0.01)]\tus\t\t\t[round(pct,0.01)]\t[n]")
+		return val
+
 	// ---- tick_usage measurements ----
 
 	// pct is the world.tick_usage delta across the timed block.
 	MeasureTU(id, category, name, pct, reps, sub_baseline, notes)
 		var/raw = pct * US_PER_PCT / reps
-		var/val = sub_baseline ? (raw - BASE_US) : raw
-		if(val < 0) val = 0
-		MEASURED++
+		var/val = raw
 		var/flag = ""
+		// The baseline flags Measure() carries, which this proc did not until
+		// 2026-08-02. Converting the four vars.* rows to tick_usage took
+		// baseline_heavy from 4 to 0, which read as an improvement and was a
+		// lost warning: those rows are baseline-dominated by construction and
+		// are supposed to say so. A clock change must not quietly drop a flag.
+		if(sub_baseline)
+			val = raw - BASE_US
+			if(val <= 0)
+				val = 0
+				flag = "BELOW_BASELINE"
+			else if(raw > 0 && (BASE_US / raw) > BASELINE_HEAVY_FRAC)
+				flag = "BASELINE_HEAVY"
+		MEASURED++
 		if(pct < MIN_PCT)
-			LOWRES++
 			flag = "LOW_RESOLUTION"
+		else if(pct < MIN_BLOCK_PCT && flag != "BELOW_BASELINE" && flag != "BASELINE_HEAVY")
+			flag = "SHORT_BLOCK"
+		if(flag == "LOW_RESOLUTION" || flag == "BELOW_BASELINE") LOWRES++
+		else if(flag == "BASELINE_HEAVY") HEAVY++
+		else if(flag == "SHORT_BLOCK") SHORTBLOCK++
 		var/n = notes ? notes : ""
 		if(flag) n = n ? "[flag]; [n]" : flag
 		Row("MEASURE\t[id]\t[category]\t[name]\t[val >= 10 ? round(val,0.1) : round(val,0.01)]\tus\t\t\t[round(pct,0.01)]\t[n]")
@@ -401,4 +469,5 @@ proc
 		Row("# measured\t[MEASURED]")
 		Row("# low_resolution\t[LOWRES]")
 		Row("# baseline_heavy\t[HEAVY]")
+		Row("# short_block\t[SHORTBLOCK]")
 		Row("# result\t[FAILED ? "FAIL" : "PASS"]")

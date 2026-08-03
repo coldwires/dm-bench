@@ -31,81 +31,81 @@ proc
 
 	VW_Build(reps)
 		VACC = 0
-		var/t0 = world.timeofday
+		var/tu0 = world.tick_usage
 		for(var/i = 1 to reps)
 			var/list/V = view(7, vw_probe)
 			VACC += V.len
-		return world.timeofday - t0
+		return world.tick_usage - tu0
 
 	VW_BuildFilter(reps)
 		VACC = 0
-		var/t0 = world.timeofday
+		var/tu0 = world.tick_usage
 		for(var/i = 1 to reps)
 			var/list/V = view(7, vw_probe)
 			for(var/mob/M in V)
 				VACC++
-		return world.timeofday - t0
+		return world.tick_usage - tu0
 
 	VW_Inline(reps, r)
 		VACC = 0
-		var/t0 = world.timeofday
+		var/tu0 = world.tick_usage
 		for(var/i = 1 to reps)
 			for(var/mob/M in view(r, vw_probe))
 				VACC++
-		return world.timeofday - t0
+		return world.tick_usage - tu0
 
 	VW_Untyped(reps)
 		VACC = 0
-		var/t0 = world.timeofday
+		var/tu0 = world.tick_usage
 		for(var/i = 1 to reps)
 			for(var/atom/A in view(7, vw_probe))
 				VACC++
-		return world.timeofday - t0
+		return world.tick_usage - tu0
 
 	VW_TwoCached(reps)
 		VACC = 0
-		var/t0 = world.timeofday
+		var/tu0 = world.tick_usage
 		for(var/i = 1 to reps)
 			var/list/V = view(7, vw_probe)
 			for(var/mob/M in V)
 				VACC++
 			for(var/obj/O in V)
 				VACC++
-		return world.timeofday - t0
+		return world.tick_usage - tu0
 
 	VW_TwoInline(reps)
 		VACC = 0
-		var/t0 = world.timeofday
+		var/tu0 = world.tick_usage
 		for(var/i = 1 to reps)
 			for(var/mob/M in view(7, vw_probe))
 				VACC++
 			for(var/obj/O in view(7, vw_probe))
 				VACC++
-		return world.timeofday - t0
+		return world.tick_usage - tu0
 
 	VW_Range(reps)
 		VACC = 0
-		var/t0 = world.timeofday
+		var/tu0 = world.tick_usage
 		for(var/i = 1 to reps)
 			for(var/mob/M in range(7, vw_probe))
 				VACC++
-		return world.timeofday - t0
+		return world.tick_usage - tu0
 
 	VW_Oview(reps)
 		VACC = 0
-		var/t0 = world.timeofday
+		var/tu0 = world.tick_usage
 		for(var/i = 1 to reps)
 			for(var/mob/M in oview(7, vw_probe))
 				VACC++
-		return world.timeofday - t0
+		return world.tick_usage - tu0
 
 	VW_Viewers(reps)
 		VACC = 0
-		var/t0 = world.timeofday
+		var/tu0 = world.tick_usage
 		for(var/i = 1 to reps)
 			for(var/mob/M in viewers(7, vw_probe))
 				VACC++
-		return world.timeofday - t0
+		return world.tick_usage - tu0
 
 	Suite_View()
 		VW_Setup(40, 400)
@@ -135,10 +135,10 @@ proc
 			(n_bf == n_in) ? 1 : 0, 1,
 			"[n_bf] vs [n_in] mobs; without this the timing comparison is void")
 
-		Measure("view.build_only", "view", "var/list/V = view(7,c)", d_build, r_build, 0, "[atoms] atoms")
-		Measure("view.build_then_filter", "view", "cache list, then for(mob in V)", d_bf, r_bf, 0, "[n_bf] mobs")
-		var/m_inline = Measure("view.inline_typed", "view", "for(mob in view(7,c))", d_in, r_inline, 0, "[n_in] mobs")
-		Measure("view.inline_untyped", "view", "for(atom in view(7,c))", d_un, r_untyped, 0, "[atoms] atoms")
+		MeasureTU("view.build_only", "view", "var/list/V = view(7,c)", d_build, r_build, 0, "[atoms] atoms")
+		MeasureTU("view.build_then_filter", "view", "cache list, then for(mob in V)", d_bf, r_bf, 0, "[n_bf] mobs")
+		var/m_inline = MeasureTU("view.inline_typed", "view", "for(mob in view(7,c))", d_in, r_inline, 0, "[n_in] mobs")
+		MeasureTU("view.inline_untyped", "view", "for(atom in view(7,c))", d_un, r_untyped, 0, "[atoms] atoms")
 
 		// --- two passes ---
 		var/r_tc = 6000
@@ -150,8 +150,8 @@ proc
 		Assert("view.twopass_equivalence", "view",
 			"cached and re-queried two-pass return identical counts",
 			(n_tc == n_ti) ? 1 : 0, 1, "[n_tc] vs [n_ti]")
-		Measure("view.twopass_cached", "view", "cache list, two typed loops", d_tc, r_tc, 0, null)
-		Measure("view.twopass_requery", "view", "call view() twice inline", d_ti, r_ti, 0, null)
+		MeasureTU("view.twopass_cached", "view", "cache list, two typed loops", d_tc, r_tc, 0, null)
+		MeasureTU("view.twopass_requery", "view", "call view() twice inline", d_ti, r_ti, 0, null)
 
 		// --- family ---
 		// The iteration count is named once and used twice, to run the loop and
@@ -163,10 +163,10 @@ proc
 		var/r_oview = 110000
 		var/r_viewers = 120000
 		var/r_range = 270000
-		var/m_family = Measure("view.family_view", "view", "for(mob in view(7,c))", VW_Inline(r_view, 7), r_view, 0, null)
-		Measure("view.family_oview", "view", "for(mob in oview(7,c))", VW_Oview(r_oview), r_oview, 0, null)
-		Measure("view.family_viewers", "view", "for(mob in viewers(7,c))", VW_Viewers(r_viewers), r_viewers, 0, null)
-		Measure("view.family_range", "view", "for(mob in range(7,c))", VW_Range(r_range), r_range, 0, null)
+		var/m_family = MeasureTU("view.family_view", "view", "for(mob in view(7,c))", VW_Inline(r_view, 7), r_view, 0, null)
+		MeasureTU("view.family_oview", "view", "for(mob in oview(7,c))", VW_Oview(r_oview), r_oview, 0, null)
+		MeasureTU("view.family_viewers", "view", "for(mob in viewers(7,c))", VW_Viewers(r_viewers), r_viewers, 0, null)
+		MeasureTU("view.family_range", "view", "for(mob in range(7,c))", VW_Range(r_range), r_range, 0, null)
 
 		// --- radius ---
 		var/r_r1 = 1600000
@@ -174,11 +174,11 @@ proc
 		var/r_r5 = 160000
 		var/r_r7 = 110000
 		var/r_r10 = 70000
-		var/v_r1 = Measure("view.radius_1", "view", "for(mob in view(1,c))", VW_Inline(r_r1, 1), r_r1, 0, null)
-		var/v_r3 = Measure("view.radius_3", "view", "for(mob in view(3,c))", VW_Inline(r_r3, 3), r_r3, 0, null)
-		var/v_r5 = Measure("view.radius_5", "view", "for(mob in view(5,c))", VW_Inline(r_r5, 5), r_r5, 0, null)
-		var/v_r7 = Measure("view.radius_7", "view", "for(mob in view(7,c))", VW_Inline(r_r7, 7), r_r7, 0, null)
-		var/v_r10 = Measure("view.radius_10", "view", "for(mob in view(10,c))", VW_Inline(r_r10, 10), r_r10, 0, null)
+		var/v_r1 = MeasureTU("view.radius_1", "view", "for(mob in view(1,c))", VW_Inline(r_r1, 1), r_r1, 0, null)
+		var/v_r3 = MeasureTU("view.radius_3", "view", "for(mob in view(3,c))", VW_Inline(r_r3, 3), r_r3, 0, null)
+		var/v_r5 = MeasureTU("view.radius_5", "view", "for(mob in view(5,c))", VW_Inline(r_r5, 5), r_r5, 0, null)
+		var/v_r7 = MeasureTU("view.radius_7", "view", "for(mob in view(7,c))", VW_Inline(r_r7, 7), r_r7, 0, null)
+		var/v_r10 = MeasureTU("view.radius_10", "view", "for(mob in view(10,c))", VW_Inline(r_r10, 10), r_r10, 0, null)
 
 #ifdef BREAKCHECK
 		v_r7 = v_r7 * 1.83             // radius_7 above radius_10, as published
@@ -214,8 +214,8 @@ proc
 			var/at = VACC / r_craw
 			var/dtp = VW_Inline(r_ctyped, 7)
 			var/mo = VACC / r_ctyped
-			var/raw_us = dr * 100000 / r_craw
-			var/typed_us = dtp * 100000 / r_ctyped
+			var/raw_us = dr * US_PER_PCT / r_craw
+			var/typed_us = dtp * US_PER_PCT / r_ctyped
 			if(added == 0)
 				base_raw = raw_us
 				base_typed = typed_us
@@ -224,8 +224,8 @@ proc
 					"typed loop grows far less than raw view() as clutter rises",
 					(raw_us / max(base_raw, 0.01) > 3 * (typed_us / max(base_typed, 0.01))) ? 1 : 0, 1,
 					"raw x[round(raw_us/max(base_raw,0.01),0.1)], typed x[round(typed_us/max(base_typed,0.01),0.1)] at [at] atoms, [mo] mobs")
-			Measure("view.clutter_[added]_raw", "view", "view(7) build with [added] extra objs", dr, r_craw, 0, "[at] atoms")
-			var/mc = Measure("view.clutter_[added]_typed", "view", "typed loop with [added] extra objs", dtp, r_ctyped, 0, "[mo] mobs")
+			MeasureTU("view.clutter_[added]_raw", "view", "view(7) build with [added] extra objs", dr, r_craw, 0, "[at] atoms")
+			var/mc = MeasureTU("view.clutter_[added]_typed", "view", "typed loop with [added] extra objs", dtp, r_ctyped, 0, "[mo] mobs")
 			if(added == 0) m_clutter0 = mc
 		for(var/obj/vw_obj/o in clutter)
 			o.loc = null
@@ -272,8 +272,8 @@ proc
 			blocks += b
 		var/v_blocked = VW_Inline(r_los, 7)
 		var/seen_blocked = VACC / r_los
-		var/us_clear = v_clear * 100000 / r_los
-		var/us_blocked = v_blocked * 100000 / r_los
+		var/us_clear = v_clear * US_PER_PCT / r_los
+		var/us_blocked = v_blocked * US_PER_PCT / r_los
 		Assert("view.los_cost_is_unconditional", "view",
 			"view() cost does not rise with opaque atom count",
 			(us_blocked < us_clear * 1.6) ? 1 : 0, 1,
