@@ -15,7 +15,7 @@ Measured cost of common BYOND operations.
 - **Figures are printed at the precision the harness emits, which is finer than the measurement supports.** Repeatability is about 2% on the measuring machine, but that is not the same as accuracy: sub-microsecond rows subtract a calibrated baseline, and values are emitted at two decimals, so a row reading 0.12 cannot express a difference finer than about 8% whatever the machine does. **Do not read 0.12 against 0.13 as a difference.** Ratios between rows measured close together are sounder than absolutes, since the arms share machine conditions.
 - **A ratio only travels when both of its arms are bounded by the same resource.** Computation against computation transfers between machines; buffered logging against an unbuffered file write does not, and section 11b is what that looks like when measured on two operating systems.
 - Where two snippets are claimed equivalent, the harness asserts matching output counts and prints the result.
-- Harnesses: `suite.dme` and `suite_del.dme`. Sections 1 through 10, 11b, 13 and 14 regenerate from them. Figures imported from harnesses absent from this tree are flagged in place and are now confined to: the `extras/respawn.dme` line in section 8, two side observations in section 14, and sections 11 and 12 entire, whose harnesses (`spec_sheet.dme`, `hypotheses.dme`) predate this suite.
+- Harnesses: `suite.dme`, `suite_del.dme` and `suite_animate.dme`. Sections 1 through 10, 11b, 13 and 14 regenerate from them. **What does not regenerate is named where it appears rather than left for a reader to discover**: the `extras/respawn.dme` line in section 8, two side observations in section 14, and section 12 entire, which needs a remote server and a second machine driving real clients and cannot be produced by any automated run here. Section 11 was withdrawn instead of carried, and its place is kept so the removal is visible.
 
 **Regenerated 2026-08-03, and the figures moved.** Sections 1 through 11b now
 come from the measuring machine rather than the desktop, and every measured row
@@ -53,7 +53,7 @@ re-derived with `world.tick_usage` and median-of-three, and two of its rows are
 withheld today because that same subtraction guard now judges them too noisy on
 a machine fast enough to shrink the difference it was measuring.
 
-**Controls.** Mechanism claims on this page are tested rather than asserted, in `hypotheses.dme`, **which is not in the tree**. The `del()` figures were re-derived in isolated harnesses after the main run proved to contaminate itself; see §2.
+**Controls.** Where this page claims a mechanism rather than a cost, an assertion tests it in the suite and is named in place: that a typed view loop never builds the discarded entries, that occlusion actually occludes, that `istype` does not scale with tree depth while `typesof` does, that `Move()` fires four callbacks where `loc` fires none, that write cost is per call rather than per byte. The `del()` figures were re-derived in an isolated harness after the main run proved to contaminate itself; see §2.
 
 Reference: at `tick_lag 0.5` a tick is 50,000 µs.
 
@@ -582,29 +582,24 @@ Increment in `New()`, decrement in `Del()`, dump per-type counts from an admin v
 
 ---
 
-## 11. Tick budget, 200 players
+## 11. Tick budget, 200 players. Withdrawn
 
-> **This section does not regenerate from this repository.** It was measured by
-> a 200-player simulation harness that is not in the tree, in two runs rather
-> than the three this project now requires, with no spread published per row
-> and no resolution guard applied. `extras/load.dme` here is an earlier, unported
-> harness of the same shape. Treat the figures as indicative, and the 9.2 to
-> 9.6x polling ratio as the one quantity worth carrying, since a ratio between
-> two arms of one run survives conditions that its absolute percentages do
-> not. Nothing else on this page depends on it.
+This section published a 200-player perception-load simulation: polling
+`view(7)` from every player against pushing events outward, with the polling
+cost given as 9.2 to 9.6x the event-driven form and peaking near half a tick
+when players clustered.
 
-200 mobs, 100 ticks, `tick_lag 0.5`, sampling `world.tick_usage`. Perception work only.
+**It has been removed rather than restated.** Its harness is not in this
+repository, so nothing here could reproduce it, and it was two runs with no
+spread published and no resolution guard applied, which is below the standard
+every other section is now held to. The design advice it carried, that pushing
+from an event beats polling from every observer, may well be right, and §1
+independently establishes that `view()` is expensive enough for the shape to be
+plausible. Neither of those is a measurement.
 
-Two runs.
-
-| Workload | Spread over 200x200 | All 200 in an 11x11 |
-|---|---|---|
-| idle | 0% | 0% |
-| every player polls `view(7)` | 7.4 to 8.2% | 32.5 to 37.6%, peak 43 to 51% |
-| 20 movers query | 0.9 to 1.0% | 3.5 to 4.1% |
-| 20 events push outward | 0.8 to 0.9% | 3.4 to 4.1% |
-
-Polling costs 9.2 to 9.6x event-driven notification and peaks near half the tick when players cluster.
+Rebuilding it is a real piece of work rather than a port: it needs a load
+harness with 200 mobs and its own manifest. `extras/load.dme` is an earlier,
+unported harness of the same shape and is the obvious starting point.
 
 ---
 
