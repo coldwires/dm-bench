@@ -194,30 +194,50 @@ measurement.
 
 ## State of the results
 
-All baselines were regenerated on 2026-08-01 from three interleaved runs per
-build of each suite.
+**Figures come from a dedicated headless Linux machine**, which runs nothing
+else and has its CPU frequency clamped to base. A Windows desktop runs the
+same suite as a cross-check. The two agree on every assertion and on every
+cost outside the io layer, and where they disagree the results page says so
+rather than averaging them. The desktop is not the source of published figures
+because it is in daily use: its runs agree with each other to about 9%,
+against about 2% on the measuring machine.
 
-`suite_del.dme` passes 10 of 10 on 516.1666 and 516.1685, with the population
-sweep reaching 300,000 live objects. Its population figures publish as median
-plus range: the del() scan is memory-bound, and its cost tracks ambient machine
-conditions run to run even though the shape (superlinear growth, flat null
-cost, permanent residual) holds in every run, which
-`del.population_sweep_monotonic` now asserts rather than assumes.
+All baselines were regenerated on 2026-08-03, three runs per build of each
+suite on each machine, after every measured row outside the scheduler moved to
+`world.tick_usage`.
 
-`suite.dme`, three High-priority runs merged per build: 52 assertions, 92
-measurements, 52 passed, 0 failed, 0 unstable on both 516.1666 and 516.1685,
-with every assertion verdict identical across the two builds. 4 of 92 rows on
-1666 and 6 of 92 on 1685 vary more than 25% across their triples, and those
-that do are the rows pinned at the instrument's floor (the vars reads, the
-framework's own baseline rows) or derived ratios. The lookup, call and
-allocation rows use the discarded-unroll instrument as of 2026-07-31, which
-cut the subtracted-baseline share of those rows from up to 40% to a few
-percent and reduced the BASELINE_HEAVY count to the four vars reads, which
-keep an accumulator because the compiler eliminates a discarded pure read
-outright. A normal-priority triple is kept alongside as
-`516.1666-windows-normal-priority.tsv` as the priority experiment's record;
-the count of wide rows tracks ambient machine load and has ranged 4 to 30
-across triples on this machine.
+`suite_del.dme` passes 10 of 10 on 516.1666 and 516.1685 on both machines,
+with the population sweep reaching 300,000 live objects. Its population
+figures publish as median plus range, because the del() scan is a memory walk:
+the shape (superlinear growth, flat null cost, permanent residual) holds
+everywhere and `del.population_sweep_monotonic` asserts it, but the slope
+belongs to the machine. Going from 50,000 to 300,000 live objects costs 12.7x
+the time on one machine here and 40x on the other. Carry the shape, not the
+coefficient.
+
+`suite.dme`, three runs merged per build on each machine: 52 assertions, 92
+measurements, **52 passed, 0 failed, 0 unstable on both builds and both
+operating systems, with every assertion verdict identical across all four
+combinations.** That is the first cross-OS assertion matrix this project has
+been able to produce, and it is the result the assertion half of the suite
+exists to deliver.
+
+One row in 92 exceeds 25% spread on the measuring machine, `view.radius_1`,
+which is the smallest row in the radius sweep. On the desktop 24 and 37 rows
+do, which is that machine rather than the suite.
+
+The lookup, call and allocation rows use the discarded-unroll instrument,
+which cut the subtracted-baseline share of those rows from up to 40% to a few
+percent and reduced the `BASELINE_HEAVY` count to the four variable reads.
+Those keep an accumulator because the compiler eliminates a discarded pure
+read outright, so a converted row would time an empty loop and publish a
+plausible near-zero with nothing flagged.
+
+Two rows in the del suite are withheld on the measuring machine rather than
+published: the zero-reference case, which is below the resolution floor on
+every machine tried, and the 256-reference case, whose figure is a difference
+between two timed blocks that this machine deletes too quickly to separate
+from its own error. Both say so where they would otherwise appear.
 
 **Six of the assertions encode invariants rather than behaviour**: that the
 view() radius sweep rises at every step, that three rows timing the same
@@ -230,35 +250,45 @@ reintroduces the defect it guards against.
 
 ### Precision
 
-**Absolute figures carry an error bar of at least 15%.** That is measured, not
-estimated. Spread by measurement size, three runs on one build:
+**The error bar belongs to the machine, not to the project**, and the two
+machines here differ by about 4x. Median run-to-run spread by measurement size,
+three runs of one build on each:
 
-| value band | rows | median spread |
+| value band | linux, dedicated | windows, in daily use |
 |---|---|---|
-| under 0.2 us | 25 | 21% |
-| 0.2 to 1 us | 15 | 13% |
-| 1 to 10 us | 15 | 14% |
-| over 10 us | 29 | 15% |
+| under 0.2 us | 0% | 12% |
+| 0.2 to 1 us | 3% | 9% |
+| 1 to 10 us | 3% | 8% |
+| over 10 us | 2% | 5% |
 
-If timing resolution were the limit, small measurements would be far worse than
-large ones. Rows over 10 us run for seconds, have negligible quantization and
-subtract no baseline, and still scatter 15%. That floor is machine variance:
-scheduling, thermal behaviour, cache state. It survived sleeps between
-measurements, order rotation, a discarded warm-up round and eight samples.
+Overall, one row in 92 exceeds 25% spread on the measuring machine against 24
+on the desktop. **That gap is what "qualify the machine before publishing its
+numbers" is for**, and it is why the two are separate columns rather than an
+average.
 
-About half of the long-row floor is OS scheduling, measured directly: running
-DreamDaemon at High priority took rows over 10 us from 18.3% to 9.9% median
-spread, three interleaved runs per condition. High priority has been the
-runner default since 2026-07-31. The remainder is thermal and cache state and
-does not yield to priority or to any choice of clock.
+Two cautions, both learned by getting them wrong here first.
 
-The clock is not the limit. `world.tick_usage` measures linear to within 2.4%
-across a 500x range of workload.
+**A spread column is only evidence down to the resolution of what produced
+it.** These figures come from `world.tick_usage`. The same suite timed with the
+0.1s wall clock reported the desktop at 9% overall and the Linux box at 0% on
+long rows, because three runs landing in one clock quantum cannot disagree.
+Neither number was precision; both were the instrument. The 0% in the top row
+above is the surviving edge of the same effect, since values are emitted at two
+decimals and a 0.08 us row cannot express a finer disagreement than that.
 
-**So do not read a sub-microsecond figure to two decimal places.** 0.09 and 0.11
-do not differ at this precision. Ratios between rows measured close together are
-sounder than absolutes, because the two share machine conditions and drift
-partly cancels.
+**So do not read a sub-microsecond figure to two decimal places**, whatever the
+spread column says: those rows also subtract a calibrated baseline, which is a
+large share of what they measure. Ratios between rows measured close together
+are sounder than absolutes, because the two share machine conditions and drift
+partly cancels. A ratio transfers between machines only when both of its arms
+are bounded by the same resource; computation against computation travels,
+buffered logging against an unbuffered file write does not.
+
+Process priority is a per-machine answer, not a rule: elevating it halved
+long-row spread on the desktop and does nothing on the dedicated box, where no
+other process competes. The clock is not the limit either way.
+`world.tick_usage` measures linear to within 2.4% across a 500x range of
+workload.
 
 How a measuring machine qualifies before its numbers are published, and the
 full answer to "how were these tests run", is in `METHOD.md`.
