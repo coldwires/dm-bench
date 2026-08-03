@@ -30,6 +30,9 @@ $Fails = 0
 
 function Bad([string]$m) { Write-Host "FAIL  $m"; $script:Fails++ }
 function Good([string]$m) { if (-not $Quiet) { Write-Host "ok    $m" } }
+# Not a pass and not a failure: a check that could not run, said out loud. A
+# skipped check that prints nothing is indistinguishable from a passing one.
+function Note([string]$m) { if (-not $Quiet) { Write-Host "note  $m" } }
 
 # Documents live in three places: README at the root, the published record in
 # docs/, the operating notes in working/. This was a single non-recursive glob
@@ -43,10 +46,26 @@ $docs = @()
 foreach ($dd in $docDirs) {
     if (Test-Path $dd) { $docs += Get-ChildItem $dd -Filter *.md -File }
 }
-$expectedDocs = @('README.md', 'BYOND-PERF-SPEC.md', 'METHOD.md', 'NOTES.md', 'VERIFICATION.md', 'INSTRUMENTS.md')
-$missingDocs = @($expectedDocs | Where-Object { $docs.Name -notcontains $_ })
-if ($missingDocs.Count -gt 0) { Bad "expected document(s) not found on the doc path: $($missingDocs -join ', ')" }
-else { Good "$($docs.Count) documents discovered, all $($expectedDocs.Count) expected ones present" }
+#
+# Split by whether the document ships, because the answer to "is it missing"
+# differs. A public document absent from the doc path is always a failure. The
+# operating notes are gitignored, so they are simply not there in a fresh
+# clone, and demanding them made this script fail in exactly the environment a
+# contributor or CI would run it in. They are still required whenever they
+# exist locally: a working tree that has them must not quietly stop checking
+# them, which was the original point.
+$publicDocs  = @('README.md', 'BYOND-PERF-SPEC.md', 'METHOD.md')
+$privateDocs = @('NOTES.md', 'VERIFICATION.md', 'INSTRUMENTS.md')
+$missingDocs = @($publicDocs | Where-Object { $docs.Name -notcontains $_ })
+if ($missingDocs.Count -gt 0) { Bad "published document(s) not found on the doc path: $($missingDocs -join ', ')" }
+else { Good "$($docs.Count) documents discovered, all $($publicDocs.Count) published ones present" }
+
+$absentNotes = @($privateDocs | Where-Object { $docs.Name -notcontains $_ })
+if ($absentNotes.Count -eq $privateDocs.Count) {
+    Note "operating notes absent, so this is a published-record check only. That is expected in a clone; the notes do not ship."
+} elseif ($absentNotes.Count -gt 0) {
+    Bad "operating note(s) missing from a tree that has the others: $($absentNotes -join ', '). Either all of them are absent, which is a clone, or one has been lost."
+}
 
 # ---------------------------------------------------------------- 1. row counts
 # Caught nothing for weeks, then caught "15 measurements" where the file said 13.
