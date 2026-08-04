@@ -27,7 +27,12 @@ cannot see.
 param(
     [Parameter(Mandatory = $true)][string[]]$Runs,
     [string]$Out,
-    [double]$SpreadWarnPct = 25
+    [double]$SpreadWarnPct = 25,
+    # A triple of the full suite takes about 35 minutes back to back, or about
+    # 70 interleaved with a second build, so two hours leaves real headroom and
+    # still catches a resumed batch. Raise it deliberately if a machine is slow
+    # enough to need it, rather than to make a stitched triple merge.
+    [double]$MaxSpanHours = 2
 )
 
 $ErrorActionPreference = "Stop"
@@ -101,6 +106,35 @@ foreach ($key in @('clock', 'stdout_binding', 'source_commit')) {
     if ($vals.Count -eq 1) { $conditions[$key] = $vals[0] }
 }
 
+# A triple is supposed to be one sitting. Nothing here could see when a run was
+# taken until 2026-08-03, and on that day two merges were built from batches
+# that had been interrupted and resumed: one contained a run taken 2.5 hours
+# before the others and came out with 76 of 118 rows over 25% spread, because
+# the machine's conditions had changed completely in between. Every other
+# condition matched, so builds, systems, priorities, clocks and commits all
+# agreed and the merge went through.
+#
+# Runs predating the stamp are merged as before rather than refused, since
+# there is nothing to compare; mixed stamping is refused for the same reason it
+# is refused elsewhere, because an unstamped run cannot be assumed to belong.
+$stamped = @($parsed | Where-Object { $_.Meta['run_started'] })
+if ($stamped.Count -gt 0 -and $stamped.Count -ne $parsed.Count) {
+    throw "run_started is stamped in $($stamped.Count) of $($parsed.Count) runs; an unstamped run cannot be placed in time"
+}
+if ($stamped.Count -eq $parsed.Count -and $parsed.Count -gt 1) {
+    $times = @($parsed | ForEach-Object {
+        $t = [datetime]::MinValue
+        if (-not [datetime]::TryParse($_.Meta['run_started'], [ref]$t)) {
+            throw "unparseable run_started '$($_.Meta['run_started'])' in $($_.Path)"
+        }
+        $t.ToUniversalTime()
+    } | Sort-Object)
+    $spanH = ($times[-1] - $times[0]).TotalHours
+    if ($spanH -gt $MaxSpanHours) {
+        throw ("runs span {0:N1} hours, over the {1} hour limit. A triple is one sitting: the machine's conditions change underneath a batch that was interrupted and resumed, and the merge cannot see that in the numbers. Re-run the arms that are stale, or raise -MaxSpanHours deliberately." -f $spanH, $MaxSpanHours)
+    }
+}
+
 # A run that died early would otherwise contribute its prefix and look merged.
 $counts = @($parsed | ForEach-Object { $_.Rows.Count } | Sort-Object -Unique)
 if ($counts.Count -ne 1) {
@@ -129,6 +163,9 @@ $lines.Add("# system`t$system")
 $lines.Add("# runner_priority`t$($prios[0])")
 foreach ($key in @('clock', 'stdout_binding', 'source_commit')) {
     if ($conditions.ContainsKey($key)) { $lines.Add("# $key`t$($conditions[$key])") }
+}
+if ($stamped.Count -eq $parsed.Count -and $parsed.Count -gt 0) {
+    $lines.Add("# run_span_hours`t$([math]::Round($spanH, 2))")
 }
 $lines.Add("# merged_runs`t$($parsed.Count)")
 # Each run writes the same filename inside its own directory, so the leaf alone

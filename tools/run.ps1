@@ -170,7 +170,15 @@ foreach ($b in $targets) {
         }
         # The suite cannot see its own process priority, so the runner stamps
         # it. merge-runs.ps1 refuses to merge runs of mixed priority.
-        [System.IO.File]::AppendAllText($f.FullName, "# runner_priority`t$Priority`r`n# source_commit`t$SourceCommit`r`n", (New-Object System.Text.UTF8Encoding($false)))
+        # run_started is what lets merge-runs.ps1 refuse a triple stitched
+        # together across hours. Twice on 2026-08-03 a batch was interrupted,
+        # resumed, and silently produced a merge containing one run taken 2.5
+        # hours before the others; the first such merge had 76 of 118 rows over
+        # 25% spread. Every other condition was identical, so no existing
+        # refusal could see it. File timestamps cannot serve: copying a result
+        # off another machine rewrites them.
+        $started = $started.ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')
+        [System.IO.File]::AppendAllText($f.FullName, "# runner_priority`t$Priority`r`n# source_commit`t$SourceCommit`r`n# run_started`t$started`r`n", (New-Object System.Text.UTF8Encoding($false)))
         Copy-Item $f.FullName (Join-Path $ResultsDir $f.Name) -Force
         $res = (Select-String -Path $f.FullName -Pattern '^# (passed|failed|measured|low_resolution|result)\s+(\S+)') |
                ForEach-Object { "{0}={1}" -f $_.Matches.Groups[1].Value, $_.Matches.Groups[2].Value }
