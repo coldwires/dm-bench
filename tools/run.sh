@@ -172,6 +172,7 @@ for label in $targets; do
 
     before=$(ls "$wd"/results-*.tsv 2>/dev/null | wc -l)
     started=$(date +%s)
+    RUN_STARTED=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 
     # How stdout is bound changes what world.log costs, by 20x on Windows and
     # in the opposite direction on Linux, where a file is fully buffered and a
@@ -266,6 +267,9 @@ for label in $targets; do
         printf '# stdout_binding\t%s\n' "$STDOUT_BINDING"
         printf '# host\t%s\n' "$(hostname)"
         printf '# source_commit\t%s\n' "$SOURCE_COMMIT"
+        # See run.ps1 for why: this is what lets a merge refuse a triple
+        # stitched across hours, which no other stamp can detect.
+        printf '# run_started\t%s\n' "$RUN_STARTED"
     } >> "$produced"
 
     cp "$produced" "$RESULTS/$(basename "$produced")"

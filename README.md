@@ -223,12 +223,19 @@ belongs to the machine. Going from 50,000 to 300,000 live objects costs 12.7x
 the time on one machine here and 40x on the other. Carry the shape, not the
 coefficient.
 
-`suite.dme`, three runs merged per build on each machine: 58 assertions, 118
-measurements, **58 passed, 0 failed, 0 unstable on both builds and both
-operating systems, with every assertion verdict identical across all four
-combinations.** That is the first cross-OS assertion matrix this project has
-been able to produce, and it is the result the assertion half of the suite
-exists to deliver.
+`suite.dme`, three runs merged per build on each machine: 59 assertions, 118
+measurements, 0 unstable anywhere.
+
+**58 of the 59 carry the same verdict on both builds and both operating
+systems.** The one that does not is `lists.find_costs_about_the_same_as_in`,
+which passes on 516.1666 and fails on 516.1685, and it is doing exactly what it
+was added for. A FAIL in this table is not a defect in the suite; it is the
+engine having changed, and this one is a 4x slowdown in `L.Find()` introduced
+in 516.1674. If a later build repairs it, the row flips back to PASS on the day
+it happens.
+
+Every other verdict agreeing across two builds and two operating systems is the
+other half of the result, and it is what makes the disagreement legible.
 
 Two rows in 118 exceed 25% spread on the measuring machine. On the desktop 19
 and 27 do, which is that machine rather than the suite.

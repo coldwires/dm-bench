@@ -66,7 +66,7 @@
 <main>
 <header><span class="wordmark">dm-bench</span><nav aria-label="site"><a href="#trust">Trust</a><a href="#behaviour">Behaviour</a><a href="#costs">Costs</a><a href="#platform">Platform</a><a href="#rules">Rules</a><a href="#method">Method</a></nav></header>
 <p class="tagline">The measured behaviour and cost of BYOND engine operations, per build, reproducibly. Most published BYOND performance advice is untested; this replaces assertion with measurement. The repository is the database: every figure below regenerates from a version-stamped TSV baseline.</p>
-<p class="buildmeta mono">516.1666 and 516.1685 &middot; linux, cross-checked on windows &middot; main suite 58 assertions / 118 measurements per build &middot; del suite 10 / 17 &middot; 58 of 58 assertion verdicts identical across builds</p>
+<p class="buildmeta mono">516.1666 and 516.1685 &middot; linux, cross-checked on windows &middot; main suite 59 assertions / 118 measurements per build &middot; del suite 10 / 17 &middot; 58 of 59 assertion verdicts identical across builds</p>
 <section id="trust">
 <h2>Why trust these numbers</h2>
 <p class="sub">Most BYOND performance advice has been repeated for years without anyone timing it. This page exists so you can check instead of trust. Here is what stands behind the numbers.</p>
@@ -480,10 +480,7 @@ Assert("view.occlusion_works", "view",
 	"opaque atoms actually occlude", (seen_blocked &lt; seen_clear) ? 1 : 0, 1,
 	"[seen_clear] mobs visible, [seen_blocked] with 200 opaque")</pre><p class="srcnote">src/perf_view.dm</p></details></td><td><span class="st st-pass">PASS</span></td><td><span class="st st-pass">PASS</span></td></tr>
 <tr class="grouphead"><td colspan="3">lists</td></tr>
-<tr><td><details><summary><span class="id">lists.in_scales_with_size</span><span class="desc">linear search cost rises at every list size</span></summary><pre class="code">			var/t3 = world.tick_usage
-			for(var/i = 1 to reps / UNROLL)
-				X10(miss in flat)
-			MeasureUTU("lists.in_miss_n[n]", "lists", "needle in L, n=[n], not present",
+<tr><td><details><summary><span class="id">lists.find_costs_about_the_same_as_in</span><span class="desc">L.Find() costs about what the equivalent `in` scan costs</span></summary><pre class="code">			MeasureUTU("lists.in_miss_n[n]", "lists", "needle in L, n=[n], not present",
 				world.tick_usage - t3, reps, UNROLL, null)
 			#pragma pop
 
@@ -494,14 +491,40 @@ Assert("view.occlusion_works", "view",
 		// The sweep's shape is the published claim, so it is asserted, not left
 		// to a reader comparing four rows by eye. A linear scan must cost more
 		// on a longer list at every step; measured steps are 3x or wider.
-		// Every step of the sweep, including the two restored sizes. Widening it
-		// is the point of having them: the ordering now has to hold across six
-		// sizes rather than four, so a defect has more places to show.
-		Assert("lists.in_scales_with_size", "lists",
-			"linear search cost rises at every list size",
-			(in_us["10"] &lt; in_us["50"] &amp;&amp; in_us["50"] &lt; in_us["100"] &amp;&amp; in_us["100"] &lt; in_us["500"] \
-				&amp;&amp; in_us["500"] &lt; in_us["1000"] &amp;&amp; in_us["1000"] &lt; in_us["5000"]) ? 1 : 0, 1,
-			"10:[round(in_us["10"],0.01)] 50:[round(in_us["50"],0.01)] 100:[round(in_us["100"],0.01)] 500:[round(in_us["500"],0.01)] 1000:[round(in_us["1000"],0.01)] 5000:[round(in_us["5000"],0.01)] us")</pre><p class="srcnote">src/perf_core.dm</p><p class="srcnote">X10(s) repeats the statement ten times per loop pass; UNROLL = 10. Defined in src/framework.dm.</p></details></td><td><span class="st st-pass">PASS</span></td><td><span class="st st-pass">PASS</span></td></tr>
+		// A regression tripwire, added 2026-08-03, and the first assertion here
+		// that is EXPECTED to fail on a current build.
+		//
+		// Find() and `in` walk the same list for the same needle in the same
+		// slot, so they should cost about the same. On 516.1673 and earlier
+		// Find lands 1.2 to 1.4x `in`. From 516.1674 onward it is 4 to 5.8x,
+		// bisected across six builds and reproduced on two machines and two
+		// operating systems, while every other list operation, including the
+		// method call L.Copy(), is unchanged.
+		//
+		// 2.5x sits in the empty space between those two populations, far from
+		// either. It is not a tolerance to tune: it separates "these two
+		// operations cost about the same" from "one of them does four times
+		// the work".
+		//
+		// This will read FAIL on 516.1674 and later, and that is the point. A
+		// FAIL here means the engine changed, which is what the assertion half
+		// of this suite is for. If a future build repairs it, this flips back
+		// to PASS and the matrix says so on the day it happens.
+		Assert("lists.find_costs_about_the_same_as_in", "lists",
+			"L.Find() costs about what the equivalent `in` scan costs",
+			(in_us["1000"] &gt; 0 &amp;&amp; find_us["1000"] &lt; in_us["1000"] * 2.5) ? 1 : 0, 1,
+			"Find [round(find_us["1000"],0.01)] us vs in [round(in_us["1000"],0.01)] us at n=1000, [round(in_us["1000"] &gt; 0 ? find_us["1000"]/in_us["1000"] : 0, 0.01)]x; regressed in 516.1674")</pre><p class="srcnote">src/perf_core.dm</p><p class="srcnote">X10(s) repeats the statement ten times per loop pass; UNROLL = 10. Defined in src/framework.dm.</p></details></td><td><span class="st st-pass">PASS</span></td><td><span class="st st-fail">FAIL</span></td></tr>
+<tr><td><details><summary><span class="id">lists.in_scales_with_size</span><span class="desc">linear search cost rises at every list size</span></summary><pre class="code">	(in_us["1000"] &gt; 0 &amp;&amp; find_us["1000"] &lt; in_us["1000"] * 2.5) ? 1 : 0, 1,
+	"Find [round(find_us["1000"],0.01)] us vs in [round(in_us["1000"],0.01)] us at n=1000, [round(in_us["1000"] &gt; 0 ? find_us["1000"]/in_us["1000"] : 0, 0.01)]x; regressed in 516.1674")
+
+// Every step of the sweep, including the two restored sizes. Widening it
+// is the point of having them: the ordering now has to hold across six
+// sizes rather than four, so a defect has more places to show.
+Assert("lists.in_scales_with_size", "lists",
+	"linear search cost rises at every list size",
+	(in_us["10"] &lt; in_us["50"] &amp;&amp; in_us["50"] &lt; in_us["100"] &amp;&amp; in_us["100"] &lt; in_us["500"] \
+		&amp;&amp; in_us["500"] &lt; in_us["1000"] &amp;&amp; in_us["1000"] &lt; in_us["5000"]) ? 1 : 0, 1,
+	"10:[round(in_us["10"],0.01)] 50:[round(in_us["50"],0.01)] 100:[round(in_us["100"],0.01)] 500:[round(in_us["500"],0.01)] 1000:[round(in_us["1000"],0.01)] 5000:[round(in_us["5000"],0.01)] us")</pre><p class="srcnote">src/perf_core.dm</p></details></td><td><span class="st st-pass">PASS</span></td><td><span class="st st-pass">PASS</span></td></tr>
 <tr><td><details><summary><span class="id">lists.assoc_stays_flat</span><span class="desc">associative lookup does not scale with list size</span></summary><pre class="code">	(in_us["10"] &lt; in_us["50"] &amp;&amp; in_us["50"] &lt; in_us["100"] &amp;&amp; in_us["100"] &lt; in_us["500"] \
 		&amp;&amp; in_us["500"] &lt; in_us["1000"] &amp;&amp; in_us["1000"] &lt; in_us["5000"]) ? 1 : 0, 1,
 	"10:[round(in_us["10"],0.01)] 50:[round(in_us["50"],0.01)] 100:[round(in_us["100"],0.01)] 500:[round(in_us["500"],0.01)] 1000:[round(in_us["1000"],0.01)] 5000:[round(in_us["5000"],0.01)] us")
@@ -1061,7 +1084,7 @@ var/r_build = 8000</pre><details class="inner"><summary class="srcnote">as measu
 		return world.tick_usage - tu0
 
 var/r_build = 8000
-		MeasureTU("view.build_only", "view", "var/list/V = view(7,c)", d_build, r_build, 0, "[atoms] atoms")</pre></details></details></td><td class="num"><span class="val">214.1 &micro;s</span> <span class="spread"><span class="bar"><i style="width:4%"></i></span>1%</span></td><td class="num"><span class="val">208.8 &micro;s</span> <span class="spread"><span class="bar"><i style="width:12%"></i></span>3%</span></td></tr>
+		MeasureTU("view.build_only", "view", "var/list/V = view(7,c)", d_build, r_build, 0, "[atoms] atoms")</pre></details></details></td><td class="num"><span class="val">212.6 &micro;s</span> <span class="spread"><span class="bar"><i style="width:8%"></i></span>2%</span></td><td class="num"><span class="val">210.9 &micro;s</span> <span class="spread"><span class="bar"><i style="width:4%"></i></span>1%</span></td></tr>
 <tr><td><details><summary><span class="id">view.build_then_filter</span><span class="desc">cache list, then for(mob in V)</span></summary><pre class="code">		var/d_bf = VW_BuildFilter(r_bf)
 
 	VW_BuildFilter(reps)
@@ -1083,7 +1106,7 @@ var/r_bf = 8000</pre><details class="inner"><summary class="srcnote">as measured
 		return world.tick_usage - tu0
 
 var/r_bf = 8000
-		MeasureTU("view.build_then_filter", "view", "cache list, then for(mob in V)", d_bf, r_bf, 0, "[n_bf] mobs")</pre></details></details></td><td class="num"><span class="val">247.7 &micro;s</span> <span class="spread"><span class="bar"><i style="width:0%"></i></span>0%</span></td><td class="num"><span class="val">243.1 &micro;s</span> <span class="spread"><span class="bar"><i style="width:8%"></i></span>2%</span></td></tr>
+		MeasureTU("view.build_then_filter", "view", "cache list, then for(mob in V)", d_bf, r_bf, 0, "[n_bf] mobs")</pre></details></details></td><td class="num"><span class="val">245.8 &micro;s</span> <span class="spread"><span class="bar"><i style="width:8%"></i></span>2%</span></td><td class="num"><span class="val">245.6 &micro;s</span> <span class="spread"><span class="bar"><i style="width:4%"></i></span>1%</span></td></tr>
 <tr><td><details><summary><span class="id">view.inline_typed</span><span class="desc">for(mob in view(7,c))</span></summary><pre class="code">		var/d_in = VW_Inline(r_inline, 7)
 
 	VW_Inline(reps, r)
@@ -1103,7 +1126,7 @@ var/r_inline = 110000</pre><details class="inner"><summary class="srcnote">as me
 		return world.tick_usage - tu0
 
 var/r_inline = 110000
-		var/m_inline = MeasureTU("view.inline_typed", "view", "for(mob in view(7,c))", d_in, r_inline, 0, "[n_in] mobs")</pre></details></details></td><td class="num"><span class="val">27.2 &micro;s</span> <span class="spread"><span class="bar"><i style="width:0%"></i></span>0%</span></td><td class="num"><span class="val">27.1 &micro;s</span> <span class="spread"><span class="bar"><i style="width:4%"></i></span>1%</span></td></tr>
+		var/m_inline = MeasureTU("view.inline_typed", "view", "for(mob in view(7,c))", d_in, r_inline, 0, "[n_in] mobs")</pre></details></details></td><td class="num"><span class="val">26.9 &micro;s</span> <span class="spread"><span class="bar"><i style="width:4%"></i></span>1%</span></td><td class="num"><span class="val">27.1 &micro;s</span> <span class="spread"><span class="bar"><i style="width:4%"></i></span>1%</span></td></tr>
 <tr><td><details><summary><span class="id">view.inline_untyped</span><span class="desc">for(atom in view(7,c))</span></summary><pre class="code">		var/d_un = VW_Untyped(r_untyped)
 
 	VW_Untyped(reps)
@@ -1123,7 +1146,7 @@ var/r_untyped = 6000</pre><details class="inner"><summary class="srcnote">as mea
 		return world.tick_usage - tu0
 
 var/r_untyped = 6000
-		MeasureTU("view.inline_untyped", "view", "for(atom in view(7,c))", d_un, r_untyped, 0, "[atoms] atoms")</pre></details></details></td><td class="num"><span class="val">350.5 &micro;s</span> <span class="spread"><span class="bar"><i style="width:8%"></i></span>2%</span></td><td class="num"><span class="val">345.9 &micro;s</span> <span class="spread"><span class="bar"><i style="width:4%"></i></span>1%</span></td></tr>
+		MeasureTU("view.inline_untyped", "view", "for(atom in view(7,c))", d_un, r_untyped, 0, "[atoms] atoms")</pre></details></details></td><td class="num"><span class="val">346.8 &micro;s</span> <span class="spread"><span class="bar"><i style="width:4%"></i></span>1%</span></td><td class="num"><span class="val">344.9 &micro;s</span> <span class="spread"><span class="bar"><i style="width:8%"></i></span>2%</span></td></tr>
 <tr><td><details><summary><span class="id">view.twopass_cached</span><span class="desc">cache list, two typed loops</span></summary><pre class="code">		var/d_tc = VW_TwoCached(r_tc)
 
 	VW_TwoCached(reps)
@@ -1149,7 +1172,7 @@ var/r_tc = 6000</pre><details class="inner"><summary class="srcnote">as measured
 		return world.tick_usage - tu0
 
 var/r_tc = 6000
-		MeasureTU("view.twopass_cached", "view", "cache list, two typed loops", d_tc, r_tc, 0, null)</pre></details></details></td><td class="num"><span class="val">371.4 &micro;s</span> <span class="spread"><span class="bar"><i style="width:4%"></i></span>1%</span></td><td class="num"><span class="val">364.4 &micro;s</span> <span class="spread"><span class="bar"><i style="width:4%"></i></span>1%</span></td></tr>
+		MeasureTU("view.twopass_cached", "view", "cache list, two typed loops", d_tc, r_tc, 0, null)</pre></details></details></td><td class="num"><span class="val">367.3 &micro;s</span> <span class="spread"><span class="bar"><i style="width:8%"></i></span>2%</span></td><td class="num"><span class="val">366.3 &micro;s</span> <span class="spread"><span class="bar"><i style="width:0%"></i></span>0%</span></td></tr>
 <tr><td><details><summary><span class="id">view.twopass_requery</span><span class="desc">call view() twice inline</span></summary><pre class="code">		var/d_ti = VW_TwoInline(r_ti)
 
 	VW_TwoInline(reps)
@@ -1173,7 +1196,7 @@ var/r_ti = 14000</pre><details class="inner"><summary class="srcnote">as measure
 		return world.tick_usage - tu0
 
 var/r_ti = 14000
-		MeasureTU("view.twopass_requery", "view", "call view() twice inline", d_ti, r_ti, 0, null)</pre></details></details></td><td class="num"><span class="val">225.3 &micro;s</span> <span class="spread"><span class="bar"><i style="width:4%"></i></span>1%</span></td><td class="num"><span class="val">221.7 &micro;s</span> <span class="spread"><span class="bar"><i style="width:0%"></i></span>0%</span></td></tr>
+		MeasureTU("view.twopass_requery", "view", "call view() twice inline", d_ti, r_ti, 0, null)</pre></details></details></td><td class="num"><span class="val">221.8 &micro;s</span> <span class="spread"><span class="bar"><i style="width:8%"></i></span>2%</span></td><td class="num"><span class="val">220.1 &micro;s</span> <span class="spread"><span class="bar"><i style="width:4%"></i></span>1%</span></td></tr>
 <tr><td><details><summary><span class="id">view.family_view</span><span class="desc">for(mob in view(7,c))</span></summary><pre class="code">	VW_Inline(reps, r)
 		var/tu0 = world.tick_usage
 		for(var/i = 1 to reps)
@@ -1189,7 +1212,7 @@ var/r_view = 110000</pre><details class="inner"><summary class="srcnote">as meas
 		return world.tick_usage - tu0
 
 var/r_view = 110000
-		var/m_family = MeasureTU("view.family_view", "view", "for(mob in view(7,c))", VW_Inline(r_view, 7), r_view, 0, null)</pre></details></details></td><td class="num"><span class="val">27.1 &micro;s</span> <span class="spread"><span class="bar"><i style="width:0%"></i></span>0%</span></td><td class="num"><span class="val">27.1 &micro;s</span> <span class="spread"><span class="bar"><i style="width:0%"></i></span>0%</span></td></tr>
+		var/m_family = MeasureTU("view.family_view", "view", "for(mob in view(7,c))", VW_Inline(r_view, 7), r_view, 0, null)</pre></details></details></td><td class="num"><span class="val">26.8 &micro;s</span> <span class="spread"><span class="bar"><i style="width:8%"></i></span>2%</span></td><td class="num"><span class="val">27.1 &micro;s</span> <span class="spread"><span class="bar"><i style="width:4%"></i></span>1%</span></td></tr>
 <tr><td><details><summary><span class="id">view.family_oview</span><span class="desc">for(mob in oview(7,c))</span></summary><pre class="code">	VW_Oview(reps)
 		var/tu0 = world.tick_usage
 		for(var/i = 1 to reps)
@@ -1205,7 +1228,7 @@ var/r_oview = 110000</pre><details class="inner"><summary class="srcnote">as mea
 		return world.tick_usage - tu0
 
 var/r_oview = 110000
-		MeasureTU("view.family_oview", "view", "for(mob in oview(7,c))", VW_Oview(r_oview), r_oview, 0, null)</pre></details></details></td><td class="num"><span class="val">26.9 &micro;s</span> <span class="spread"><span class="bar"><i style="width:0%"></i></span>0%</span></td><td class="num"><span class="val">26.8 &micro;s</span> <span class="spread"><span class="bar"><i style="width:4%"></i></span>1%</span></td></tr>
+		MeasureTU("view.family_oview", "view", "for(mob in oview(7,c))", VW_Oview(r_oview), r_oview, 0, null)</pre></details></details></td><td class="num"><span class="val">26.5 &micro;s</span> <span class="spread"><span class="bar"><i style="width:8%"></i></span>2%</span></td><td class="num"><span class="val">26.9 &micro;s</span> <span class="spread"><span class="bar"><i style="width:4%"></i></span>1%</span></td></tr>
 <tr><td><details><summary><span class="id">view.family_viewers</span><span class="desc">for(mob in viewers(7,c))</span></summary><pre class="code">	VW_Viewers(reps)
 		var/tu0 = world.tick_usage
 		for(var/i = 1 to reps)
@@ -1221,7 +1244,7 @@ var/r_viewers = 120000</pre><details class="inner"><summary class="srcnote">as m
 		return world.tick_usage - tu0
 
 var/r_viewers = 120000
-		MeasureTU("view.family_viewers", "view", "for(mob in viewers(7,c))", VW_Viewers(r_viewers), r_viewers, 0, null)</pre></details></details></td><td class="num"><span class="val">23.2 &micro;s</span> <span class="spread"><span class="bar"><i style="width:4%"></i></span>1%</span></td><td class="num"><span class="val">23.2 &micro;s</span> <span class="spread"><span class="bar"><i style="width:4%"></i></span>1%</span></td></tr>
+		MeasureTU("view.family_viewers", "view", "for(mob in viewers(7,c))", VW_Viewers(r_viewers), r_viewers, 0, null)</pre></details></details></td><td class="num"><span class="val">22.9 &micro;s</span> <span class="spread"><span class="bar"><i style="width:12%"></i></span>3%</span></td><td class="num"><span class="val">23.3 &micro;s</span> <span class="spread"><span class="bar"><i style="width:0%"></i></span>0%</span></td></tr>
 <tr><td><details><summary><span class="id">view.family_range</span><span class="desc">for(mob in range(7,c))</span></summary><pre class="code">	VW_Range(reps)
 		var/tu0 = world.tick_usage
 		for(var/i = 1 to reps)
@@ -1237,7 +1260,7 @@ var/r_range = 270000</pre><details class="inner"><summary class="srcnote">as mea
 		return world.tick_usage - tu0
 
 var/r_range = 270000
-		MeasureTU("view.family_range", "view", "for(mob in range(7,c))", VW_Range(r_range), r_range, 0, null)</pre></details></details></td><td class="num"><span class="val">14.6 &micro;s</span> <span class="spread"><span class="bar"><i style="width:4%"></i></span>1%</span></td><td class="num"><span class="val">14.5 &micro;s</span> <span class="spread"><span class="bar"><i style="width:8%"></i></span>2%</span></td></tr>
+		MeasureTU("view.family_range", "view", "for(mob in range(7,c))", VW_Range(r_range), r_range, 0, null)</pre></details></details></td><td class="num"><span class="val">14.3 &micro;s</span> <span class="spread"><span class="bar"><i style="width:4%"></i></span>1%</span></td><td class="num"><span class="val">14.5 &micro;s</span> <span class="spread"><span class="bar"><i style="width:4%"></i></span>1%</span></td></tr>
 <tr><td><details><summary><span class="id">view.radius_1</span><span class="desc">for(mob in view(1,c))</span></summary><pre class="code">	VW_Inline(reps, r)
 		var/tu0 = world.tick_usage
 		for(var/i = 1 to reps)
@@ -1253,7 +1276,7 @@ var/r_r1 = 1600000</pre><details class="inner"><summary class="srcnote">as measu
 		return world.tick_usage - tu0
 
 var/r_r1 = 1600000
-		var/v_r1 = MeasureTU("view.radius_1", "view", "for(mob in view(1,c))", VW_Inline(r_r1, 1), r_r1, 0, null)</pre></details></details></td><td class="num"><span class="val">1.65 &micro;s</span> <span class="spread"><span class="bar"><i style="width:100%"></i></span>46%</span></td><td class="num"><span class="val">1.47 &micro;s</span> <span class="spread"><span class="bar"><i style="width:100%"></i></span>76%</span></td></tr>
+		var/v_r1 = MeasureTU("view.radius_1", "view", "for(mob in view(1,c))", VW_Inline(r_r1, 1), r_r1, 0, null)</pre></details></details></td><td class="num"><span class="val">2.15 &micro;s</span> <span class="spread"><span class="bar"><i style="width:100%"></i></span>42%</span></td><td class="num"><span class="val">1.81 &micro;s</span> <span class="spread"><span class="bar"><i style="width:88%"></i></span>22%</span></td></tr>
 <tr><td><details><summary><span class="id">view.radius_3</span><span class="desc">for(mob in view(3,c))</span></summary><pre class="code">	VW_Inline(reps, r)
 		var/tu0 = world.tick_usage
 		for(var/i = 1 to reps)
@@ -1269,7 +1292,7 @@ var/r_r3 = 340000</pre><details class="inner"><summary class="srcnote">as measur
 		return world.tick_usage - tu0
 
 var/r_r3 = 340000
-		var/v_r3 = MeasureTU("view.radius_3", "view", "for(mob in view(3,c))", VW_Inline(r_r3, 3), r_r3, 0, null)</pre></details></details></td><td class="num"><span class="val">7.64 &micro;s</span> <span class="spread"><span class="bar"><i style="width:60%"></i></span>15%</span></td><td class="num"><span class="val">7.82 &micro;s</span> <span class="spread"><span class="bar"><i style="width:44%"></i></span>11%</span></td></tr>
+		var/v_r3 = MeasureTU("view.radius_3", "view", "for(mob in view(3,c))", VW_Inline(r_r3, 3), r_r3, 0, null)</pre></details></details></td><td class="num"><span class="val">7.07 &micro;s</span> <span class="spread"><span class="bar"><i style="width:100%"></i></span>27%</span></td><td class="num"><span class="val">7.26 &micro;s</span> <span class="spread"><span class="bar"><i style="width:100%"></i></span>25%</span></td></tr>
 <tr><td><details><summary><span class="id">view.radius_5</span><span class="desc">for(mob in view(5,c))</span></summary><pre class="code">	VW_Inline(reps, r)
 		var/tu0 = world.tick_usage
 		for(var/i = 1 to reps)
@@ -1285,7 +1308,7 @@ var/r_r5 = 160000</pre><details class="inner"><summary class="srcnote">as measur
 		return world.tick_usage - tu0
 
 var/r_r5 = 160000
-		var/v_r5 = MeasureTU("view.radius_5", "view", "for(mob in view(5,c))", VW_Inline(r_r5, 5), r_r5, 0, null)</pre></details></details></td><td class="num"><span class="val">18.1 &micro;s</span> <span class="spread"><span class="bar"><i style="width:8%"></i></span>2%</span></td><td class="num"><span class="val">18.2 &micro;s</span> <span class="spread"><span class="bar"><i style="width:4%"></i></span>1%</span></td></tr>
+		var/v_r5 = MeasureTU("view.radius_5", "view", "for(mob in view(5,c))", VW_Inline(r_r5, 5), r_r5, 0, null)</pre></details></details></td><td class="num"><span class="val">17.9 &micro;s</span> <span class="spread"><span class="bar"><i style="width:8%"></i></span>2%</span></td><td class="num"><span class="val">18 &micro;s</span> <span class="spread"><span class="bar"><i style="width:4%"></i></span>1%</span></td></tr>
 <tr><td><details><summary><span class="id">view.radius_7</span><span class="desc">for(mob in view(7,c))</span></summary><pre class="code">	VW_Inline(reps, r)
 		var/tu0 = world.tick_usage
 		for(var/i = 1 to reps)
@@ -1301,7 +1324,7 @@ var/r_r7 = 110000</pre><details class="inner"><summary class="srcnote">as measur
 		return world.tick_usage - tu0
 
 var/r_r7 = 110000
-		var/v_r7 = MeasureTU("view.radius_7", "view", "for(mob in view(7,c))", VW_Inline(r_r7, 7), r_r7, 0, null)</pre></details></details></td><td class="num"><span class="val">27.1 &micro;s</span> <span class="spread"><span class="bar"><i style="width:0%"></i></span>0%</span></td><td class="num"><span class="val">27.1 &micro;s</span> <span class="spread"><span class="bar"><i style="width:4%"></i></span>1%</span></td></tr>
+		var/v_r7 = MeasureTU("view.radius_7", "view", "for(mob in view(7,c))", VW_Inline(r_r7, 7), r_r7, 0, null)</pre></details></details></td><td class="num"><span class="val">26.8 &micro;s</span> <span class="spread"><span class="bar"><i style="width:8%"></i></span>2%</span></td><td class="num"><span class="val">27 &micro;s</span> <span class="spread"><span class="bar"><i style="width:0%"></i></span>0%</span></td></tr>
 <tr><td><details><summary><span class="id">view.radius_10</span><span class="desc">for(mob in view(10,c))</span></summary><pre class="code">	VW_Inline(reps, r)
 		var/tu0 = world.tick_usage
 		for(var/i = 1 to reps)
@@ -1317,7 +1340,7 @@ var/r_r10 = 70000</pre><details class="inner"><summary class="srcnote">as measur
 		return world.tick_usage - tu0
 
 var/r_r10 = 70000
-		var/v_r10 = MeasureTU("view.radius_10", "view", "for(mob in view(10,c))", VW_Inline(r_r10, 10), r_r10, 0, null)</pre></details></details></td><td class="num"><span class="val">39.2 &micro;s</span> <span class="spread"><span class="bar"><i style="width:0%"></i></span>0%</span></td><td class="num"><span class="val">39.1 &micro;s</span> <span class="spread"><span class="bar"><i style="width:4%"></i></span>1%</span></td></tr>
+		var/v_r10 = MeasureTU("view.radius_10", "view", "for(mob in view(10,c))", VW_Inline(r_r10, 10), r_r10, 0, null)</pre></details></details></td><td class="num"><span class="val">39.1 &micro;s</span> <span class="spread"><span class="bar"><i style="width:12%"></i></span>3%</span></td><td class="num"><span class="val">39.2 &micro;s</span> <span class="spread"><span class="bar"><i style="width:4%"></i></span>1%</span></td></tr>
 <tr><td><details><summary><span class="id">view.clutter_0_raw</span><span class="desc">view(7) build with 0 extra objs</span></summary><pre class="code">var/base_typed = 0
 var/m_clutter0 = 0
 var/top_raw = 0
@@ -1375,7 +1398,7 @@ for(var/added in list(0, 300, 1200, 2000))
 	top_atoms = at
 	top_mobs = mo
 	adv += (typed_us &gt; 0) ? (raw_us / typed_us) : 0
-	MeasureTU("view.clutter_[added]_raw", "view", "view(7) build with [added] extra objs", dr, r_craw, 0, "[at] atoms")</pre></details></details></td><td class="num"><span class="val">214 &micro;s</span> <span class="spread"><span class="bar"><i style="width:0%"></i></span>0%</span></td><td class="num"><span class="val">209.4 &micro;s</span> <span class="spread"><span class="bar"><i style="width:12%"></i></span>3%</span></td></tr>
+	MeasureTU("view.clutter_[added]_raw", "view", "view(7) build with [added] extra objs", dr, r_craw, 0, "[at] atoms")</pre></details></details></td><td class="num"><span class="val">212.4 &micro;s</span> <span class="spread"><span class="bar"><i style="width:4%"></i></span>1%</span></td><td class="num"><span class="val">211.3 &micro;s</span> <span class="spread"><span class="bar"><i style="width:4%"></i></span>1%</span></td></tr>
 <tr><td><details><summary><span class="id">view.clutter_0_typed</span><span class="desc">typed loop with 0 extra objs</span></summary><pre class="code">			var/dtp = VW_Inline(r_ctyped, 7)
 
 	VW_Inline(reps, r)
@@ -1395,7 +1418,7 @@ var/r_ctyped = 110000</pre><details class="inner"><summary class="srcnote">as me
 		return world.tick_usage - tu0
 
 var/r_ctyped = 110000
-			var/mc = MeasureTU("view.clutter_[added]_typed", "view", "typed loop with [added] extra objs", dtp, r_ctyped, 0, "[mo] mobs")</pre></details></details></td><td class="num"><span class="val">27.2 &micro;s</span> <span class="spread"><span class="bar"><i style="width:4%"></i></span>1%</span></td><td class="num"><span class="val">27.1 &micro;s</span> <span class="spread"><span class="bar"><i style="width:4%"></i></span>1%</span></td></tr>
+			var/mc = MeasureTU("view.clutter_[added]_typed", "view", "typed loop with [added] extra objs", dtp, r_ctyped, 0, "[mo] mobs")</pre></details></details></td><td class="num"><span class="val">27.1 &micro;s</span> <span class="spread"><span class="bar"><i style="width:12%"></i></span>3%</span></td><td class="num"><span class="val">27.1 &micro;s</span> <span class="spread"><span class="bar"><i style="width:4%"></i></span>1%</span></td></tr>
 <tr><td><details><summary><span class="id">view.clutter_300_raw</span><span class="desc">view(7) build with 300 extra objs</span></summary><pre class="code">var/base_typed = 0
 var/m_clutter0 = 0
 var/top_raw = 0
@@ -1453,7 +1476,7 @@ for(var/added in list(0, 300, 1200, 2000))
 	top_atoms = at
 	top_mobs = mo
 	adv += (typed_us &gt; 0) ? (raw_us / typed_us) : 0
-	MeasureTU("view.clutter_[added]_raw", "view", "view(7) build with [added] extra objs", dr, r_craw, 0, "[at] atoms")</pre></details></details></td><td class="num"><span class="val">433 &micro;s</span> <span class="spread"><span class="bar"><i style="width:8%"></i></span>2%</span></td><td class="num"><span class="val">418.9 &micro;s</span> <span class="spread"><span class="bar"><i style="width:12%"></i></span>3%</span></td></tr>
+	MeasureTU("view.clutter_[added]_raw", "view", "view(7) build with [added] extra objs", dr, r_craw, 0, "[at] atoms")</pre></details></details></td><td class="num"><span class="val">432.9 &micro;s</span> <span class="spread"><span class="bar"><i style="width:8%"></i></span>2%</span></td><td class="num"><span class="val">417.5 &micro;s</span> <span class="spread"><span class="bar"><i style="width:4%"></i></span>1%</span></td></tr>
 <tr><td><details><summary><span class="id">view.clutter_300_typed</span><span class="desc">typed loop with 300 extra objs</span></summary><pre class="code">			var/dtp = VW_Inline(r_ctyped, 7)
 
 	VW_Inline(reps, r)
@@ -1473,7 +1496,7 @@ var/r_ctyped = 110000</pre><details class="inner"><summary class="srcnote">as me
 		return world.tick_usage - tu0
 
 var/r_ctyped = 110000
-			var/mc = MeasureTU("view.clutter_[added]_typed", "view", "typed loop with [added] extra objs", dtp, r_ctyped, 0, "[mo] mobs")</pre></details></details></td><td class="num"><span class="val">30.1 &micro;s</span> <span class="spread"><span class="bar"><i style="width:12%"></i></span>3%</span></td><td class="num"><span class="val">30.1 &micro;s</span> <span class="spread"><span class="bar"><i style="width:4%"></i></span>1%</span></td></tr>
+			var/mc = MeasureTU("view.clutter_[added]_typed", "view", "typed loop with [added] extra objs", dtp, r_ctyped, 0, "[mo] mobs")</pre></details></details></td><td class="num"><span class="val">30.1 &micro;s</span> <span class="spread"><span class="bar"><i style="width:8%"></i></span>2%</span></td><td class="num"><span class="val">30.1 &micro;s</span> <span class="spread"><span class="bar"><i style="width:8%"></i></span>2%</span></td></tr>
 <tr><td><details><summary><span class="id">view.clutter_1200_raw</span><span class="desc">view(7) build with 1200 extra objs</span></summary><pre class="code">var/base_typed = 0
 var/m_clutter0 = 0
 var/top_raw = 0
@@ -1531,7 +1554,7 @@ for(var/added in list(0, 300, 1200, 2000))
 	top_atoms = at
 	top_mobs = mo
 	adv += (typed_us &gt; 0) ? (raw_us / typed_us) : 0
-	MeasureTU("view.clutter_[added]_raw", "view", "view(7) build with [added] extra objs", dr, r_craw, 0, "[at] atoms")</pre></details></details></td><td class="num"><span class="val">1559.6 &micro;s</span> <span class="spread"><span class="bar"><i style="width:20%"></i></span>5%</span></td><td class="num"><span class="val">1441.3 &micro;s</span> <span class="spread"><span class="bar"><i style="width:8%"></i></span>2%</span></td></tr>
+	MeasureTU("view.clutter_[added]_raw", "view", "view(7) build with [added] extra objs", dr, r_craw, 0, "[at] atoms")</pre></details></details></td><td class="num"><span class="val">1538.1 &micro;s</span> <span class="spread"><span class="bar"><i style="width:32%"></i></span>8%</span></td><td class="num"><span class="val">1421.7 &micro;s</span> <span class="spread"><span class="bar"><i style="width:8%"></i></span>2%</span></td></tr>
 <tr><td><details><summary><span class="id">view.clutter_1200_typed</span><span class="desc">typed loop with 1200 extra objs</span></summary><pre class="code">			var/dtp = VW_Inline(r_ctyped, 7)
 
 	VW_Inline(reps, r)
@@ -1551,7 +1574,7 @@ var/r_ctyped = 110000</pre><details class="inner"><summary class="srcnote">as me
 		return world.tick_usage - tu0
 
 var/r_ctyped = 110000
-			var/mc = MeasureTU("view.clutter_[added]_typed", "view", "typed loop with [added] extra objs", dtp, r_ctyped, 0, "[mo] mobs")</pre></details></details></td><td class="num"><span class="val">41.8 &micro;s</span> <span class="spread"><span class="bar"><i style="width:4%"></i></span>1%</span></td><td class="num"><span class="val">40.9 &micro;s</span> <span class="spread"><span class="bar"><i style="width:36%"></i></span>9%</span></td></tr>
+			var/mc = MeasureTU("view.clutter_[added]_typed", "view", "typed loop with [added] extra objs", dtp, r_ctyped, 0, "[mo] mobs")</pre></details></details></td><td class="num"><span class="val">41.3 &micro;s</span> <span class="spread"><span class="bar"><i style="width:8%"></i></span>2%</span></td><td class="num"><span class="val">40 &micro;s</span> <span class="spread"><span class="bar"><i style="width:4%"></i></span>1%</span></td></tr>
 <tr><td><details><summary><span class="id">view.clutter_2000_raw</span><span class="desc">view(7) build with 2000 extra objs</span></summary><pre class="code">var/base_typed = 0
 var/m_clutter0 = 0
 var/top_raw = 0
@@ -1609,7 +1632,7 @@ for(var/added in list(0, 300, 1200, 2000))
 	top_atoms = at
 	top_mobs = mo
 	adv += (typed_us &gt; 0) ? (raw_us / typed_us) : 0
-	MeasureTU("view.clutter_[added]_raw", "view", "view(7) build with [added] extra objs", dr, r_craw, 0, "[at] atoms")</pre></details></details></td><td class="num"><span class="val">3216.6 &micro;s</span> <span class="spread"><span class="bar"><i style="width:8%"></i></span>2%</span></td><td class="num"><span class="val">3163.5 &micro;s</span> <span class="spread"><span class="bar"><i style="width:16%"></i></span>4%</span></td></tr>
+	MeasureTU("view.clutter_[added]_raw", "view", "view(7) build with [added] extra objs", dr, r_craw, 0, "[at] atoms")</pre></details></details></td><td class="num"><span class="val">3306.5 &micro;s</span> <span class="spread"><span class="bar"><i style="width:12%"></i></span>3%</span></td><td class="num"><span class="val">3111.3 &micro;s</span> <span class="spread"><span class="bar"><i style="width:16%"></i></span>4%</span></td></tr>
 <tr><td><details><summary><span class="id">view.clutter_2000_typed</span><span class="desc">typed loop with 2000 extra objs</span></summary><pre class="code">			var/dtp = VW_Inline(r_ctyped, 7)
 
 	VW_Inline(reps, r)
@@ -1629,7 +1652,7 @@ var/r_ctyped = 110000</pre><details class="inner"><summary class="srcnote">as me
 		return world.tick_usage - tu0
 
 var/r_ctyped = 110000
-			var/mc = MeasureTU("view.clutter_[added]_typed", "view", "typed loop with [added] extra objs", dtp, r_ctyped, 0, "[mo] mobs")</pre></details></details></td><td class="num"><span class="val">54.5 &micro;s</span> <span class="spread"><span class="bar"><i style="width:28%"></i></span>7%</span></td><td class="num"><span class="val">53.4 &micro;s</span> <span class="spread"><span class="bar"><i style="width:32%"></i></span>8%</span></td></tr>
+			var/mc = MeasureTU("view.clutter_[added]_typed", "view", "typed loop with [added] extra objs", dtp, r_ctyped, 0, "[mo] mobs")</pre></details></details></td><td class="num"><span class="val">56.3 &micro;s</span> <span class="spread"><span class="bar"><i style="width:28%"></i></span>7%</span></td><td class="num"><span class="val">53.1 &micro;s</span> <span class="spread"><span class="bar"><i style="width:8%"></i></span>2%</span></td></tr>
 <tr><td><details><summary><span class="id">view.maintained_read</span><span class="desc">for(mob in a maintained list)</span></summary><pre class="code">	(same_lo &gt; 0 &amp;&amp; same_hi &lt; same_lo * 1.5) ? 1 : 0, 1,
 	"inline [round(m_inline,0.01)], family [round(m_family,0.01)], clutter_0 [round(m_clutter0,0.01)] us, ratio [round(same_lo &gt; 0 ? same_hi/same_lo : 0, 0.01)]x")
 
@@ -1654,7 +1677,7 @@ var/r_maint = 270000
 var/d_read = VW_ListRead(r_maint, maint)
 var/seen_maint = VACC / r_maint
 var/read_us = MeasureTU("view.maintained_read", "view", "for(mob in a maintained list)",
-	d_read, r_maint, 0, "[seen_maint] mobs, no query")</pre></details></details></td><td class="num"><span class="val">5.78 &micro;s</span> <span class="spread"><span class="bar"><i style="width:12%"></i></span>3%</span></td><td class="num"><span class="val">5.78 &micro;s</span> <span class="spread"><span class="bar"><i style="width:4%"></i></span>1%</span></td></tr>
+	d_read, r_maint, 0, "[seen_maint] mobs, no query")</pre></details></details></td><td class="num"><span class="val">5.74 &micro;s</span> <span class="spread"><span class="bar"><i style="width:8%"></i></span>2%</span></td><td class="num"><span class="val">5.74 &micro;s</span> <span class="spread"><span class="bar"><i style="width:0%"></i></span>0%</span></td></tr>
 <tr><td><details><summary><span class="id">view.maintained_update</span><span class="desc">one remove plus one add on the list</span></summary><pre class="code">var/mob/vw_mob/sample = null
 for(var/mob/vw_mob/M in maint)
 	sample = M
@@ -1671,7 +1694,7 @@ for(var/mob/vw_mob/M in maint)
 var/r_upd = 1500000
 var/d_upd = VW_ListUpdate(r_upd, maint, sample)
 var/upd_us = MeasureTU("view.maintained_update", "view", "one remove plus one add on the list",
-	d_upd, r_upd, 0, "cost of recording a single move")</pre></details></details></td><td class="num"><span class="val">0.25 &micro;s</span> <span class="spread"><span class="bar"><i style="width:0%"></i></span>0%</span></td><td class="num"><span class="val">0.26 &micro;s</span> <span class="spread"><span class="bar"><i style="width:16%"></i></span>4%</span></td></tr>
+	d_upd, r_upd, 0, "cost of recording a single move")</pre></details></details></td><td class="num"><span class="val">0.25 &micro;s</span> <span class="spread"><span class="bar"><i style="width:0%"></i></span>0%</span></td><td class="num"><span class="val">0.25 &micro;s</span> <span class="spread"><span class="bar"><i style="width:16%"></i></span>4%</span></td></tr>
 <tr><td><details><summary><span class="id">view.maintained_moves_per_read</span><span class="desc">moves an atom may make between reads before the query wins</span></summary><pre class="code">	(seen_maint == n_in) ? 1 : 0, 1,
 	"[seen_maint] from the list vs [n_in] from view(7)")
 
@@ -1687,7 +1710,7 @@ if(upd_us &gt; 0)
 	Derived("view.maintained_moves_per_read", "view",
 		"moves an atom may make between reads before the query wins",
 		round(max(m_inline - read_us, 0) / upd_us, 0.1), "moves",
-		"query [round(m_inline,2)] us, list read [round(read_us,2)] us, one update [round(upd_us,3)] us")</pre><p class="srcnote">src/perf_view.dm</p></details></td><td class="num"><span class="val">84.5 moves</span> <span class="spread"><span class="bar"><i style="width:12%"></i></span>3%</span></td><td class="num"><span class="val">83.2 moves</span> <span class="spread"><span class="bar"><i style="width:16%"></i></span>4%</span></td></tr>
+		"query [round(m_inline,2)] us, list read [round(read_us,2)] us, one update [round(upd_us,3)] us")</pre><p class="srcnote">src/perf_view.dm</p></details></td><td class="num"><span class="val">85.1 moves</span> <span class="spread"><span class="bar"><i style="width:8%"></i></span>2%</span></td><td class="num"><span class="val">85.4 moves</span> <span class="spread"><span class="bar"><i style="width:8%"></i></span>2%</span></td></tr>
 <tr><td><details><summary><span class="id">view.range_with_opaque</span><span class="desc">for(mob in range(7,c)), 200 opaque</span></summary><pre class="code">		round(max(m_inline - read_us, 0) / upd_us, 0.1), "moves",
 		"query [round(m_inline,2)] us, list read [round(read_us,2)] us, one update [round(upd_us,3)] us")
 
@@ -1719,32 +1742,32 @@ var/g_blocked = VW_Range(r_rng)
 var/seen_rng_blocked = VACC / r_rng
 var/us_rng_blocked = g_blocked * US_PER_PCT / r_rng
 MeasureTU("view.range_with_opaque", "view", "for(mob in range(7,c)), 200 opaque",
-	g_blocked, r_rng, 0, "[seen_rng_blocked] mobs")</pre><p class="srcnote">src/perf_view.dm</p></details></td><td class="num"><span class="val">15 &micro;s</span> <span class="spread"><span class="bar"><i style="width:4%"></i></span>1%</span></td><td class="num"><span class="val">14.8 &micro;s</span> <span class="spread"><span class="bar"><i style="width:4%"></i></span>1%</span></td></tr>
+	g_blocked, r_rng, 0, "[seen_rng_blocked] mobs")</pre><p class="srcnote">src/perf_view.dm</p></details></td><td class="num"><span class="val">15 &micro;s</span> <span class="spread"><span class="bar"><i style="width:8%"></i></span>2%</span></td><td class="num"><span class="val">14.9 &micro;s</span> <span class="spread"><span class="bar"><i style="width:8%"></i></span>2%</span></td></tr>
 <tr class="grouphead"><td colspan="3">lists</td></tr>
 <tr><td><span class="id">lists.in_n10</span><span class="desc">needle in L, n=10, worst case</span></td><td class="num"><span class="val">0.12 &micro;s</span> <span class="spread"><span class="bar"><i style="width:0%"></i></span>0%</span></td><td class="num"><span class="val">0.12 &micro;s</span> <span class="spread"><span class="bar"><i style="width:0%"></i></span>0%</span></td></tr>
 <tr><td><span class="id">lists.assoc_n10</span><span class="desc">A[needle], n=10</span></td><td class="num"><span class="val">0.15 &micro;s</span> <span class="spread"><span class="bar"><i style="width:0%"></i></span>0%</span></td><td class="num"><span class="val">0.15 &micro;s</span> <span class="spread"><span class="bar"><i style="width:0%"></i></span>0%</span></td></tr>
-<tr><td><span class="id">lists.find_n10</span><span class="desc">L.Find(needle), n=10, worst case</span></td><td class="num"><span class="val">0.17 &micro;s</span> <span class="spread"><span class="bar"><i style="width:0%"></i></span>0%</span></td><td class="num"><span class="val">0.26 &micro;s</span> <span class="spread"><span class="bar"><i style="width:16%"></i></span>4%</span></td></tr>
+<tr><td><span class="id">lists.find_n10</span><span class="desc">L.Find(needle), n=10, worst case</span></td><td class="num"><span class="val">0.17 &micro;s</span> <span class="spread"><span class="bar"><i style="width:0%"></i></span>0%</span></td><td class="num"><span class="val">0.26 &micro;s</span> <span class="spread"><span class="bar"><i style="width:0%"></i></span>0%</span></td></tr>
 <tr><td><span class="id">lists.in_miss_n10</span><span class="desc">needle in L, n=10, not present</span></td><td class="num"><span class="val">0.12 &micro;s</span> <span class="spread"><span class="bar"><i style="width:0%"></i></span>0%</span></td><td class="num"><span class="val">0.12 &micro;s</span> <span class="spread"><span class="bar"><i style="width:0%"></i></span>0%</span></td></tr>
 <tr><td><span class="id">lists.in_n50</span><span class="desc">needle in L, n=50, worst case</span></td><td class="num"><span class="val">0.22 &micro;s</span> <span class="spread"><span class="bar"><i style="width:0%"></i></span>0%</span></td><td class="num"><span class="val">0.22 &micro;s</span> <span class="spread"><span class="bar"><i style="width:0%"></i></span>0%</span></td></tr>
-<tr><td><span class="id">lists.assoc_n50</span><span class="desc">A[needle], n=50</span></td><td class="num"><span class="val">0.17 &micro;s</span> <span class="spread"><span class="bar"><i style="width:0%"></i></span>0%</span></td><td class="num"><span class="val">0.17 &micro;s</span> <span class="spread"><span class="bar"><i style="width:24%"></i></span>6%</span></td></tr>
-<tr><td><span class="id">lists.find_n50</span><span class="desc">L.Find(needle), n=50, worst case</span></td><td class="num"><span class="val">0.3 &micro;s</span> <span class="spread"><span class="bar"><i style="width:12%"></i></span>3%</span></td><td class="num"><span class="val">0.81 &micro;s</span> <span class="spread"><span class="bar"><i style="width:4%"></i></span>1%</span></td></tr>
-<tr><td><span class="id">lists.in_miss_n50</span><span class="desc">needle in L, n=50, not present</span></td><td class="num"><span class="val">0.21 &micro;s</span> <span class="spread"><span class="bar"><i style="width:0%"></i></span>0%</span></td><td class="num"><span class="val">0.22 &micro;s</span> <span class="spread"><span class="bar"><i style="width:20%"></i></span>5%</span></td></tr>
-<tr><td><span class="id">lists.in_n100</span><span class="desc">needle in L, n=100, worst case</span></td><td class="num"><span class="val">0.34 &micro;s</span> <span class="spread"><span class="bar"><i style="width:12%"></i></span>3%</span></td><td class="num"><span class="val">0.33 &micro;s</span> <span class="spread"><span class="bar"><i style="width:0%"></i></span>0%</span></td></tr>
-<tr><td><span class="id">lists.assoc_n100</span><span class="desc">A[needle], n=100</span></td><td class="num"><span class="val">0.18 &micro;s</span> <span class="spread"><span class="bar"><i style="width:0%"></i></span>0%</span></td><td class="num"><span class="val">0.18 &micro;s</span> <span class="spread"><span class="bar"><i style="width:24%"></i></span>6%</span></td></tr>
-<tr><td><span class="id">lists.find_n100</span><span class="desc">L.Find(needle), n=100, worst case</span></td><td class="num"><span class="val">0.46 &micro;s</span> <span class="spread"><span class="bar"><i style="width:0%"></i></span>0%</span></td><td class="num"><span class="val">1.48 &micro;s</span> <span class="spread"><span class="bar"><i style="width:0%"></i></span>0%</span></td></tr>
+<tr><td><span class="id">lists.assoc_n50</span><span class="desc">A[needle], n=50</span></td><td class="num"><span class="val">0.17 &micro;s</span> <span class="spread"><span class="bar"><i style="width:24%"></i></span>6%</span></td><td class="num"><span class="val">0.17 &micro;s</span> <span class="spread"><span class="bar"><i style="width:24%"></i></span>6%</span></td></tr>
+<tr><td><span class="id">lists.find_n50</span><span class="desc">L.Find(needle), n=50, worst case</span></td><td class="num"><span class="val">0.29 &micro;s</span> <span class="spread"><span class="bar"><i style="width:0%"></i></span>0%</span></td><td class="num"><span class="val">0.81 &micro;s</span> <span class="spread"><span class="bar"><i style="width:0%"></i></span>0%</span></td></tr>
+<tr><td><span class="id">lists.in_miss_n50</span><span class="desc">needle in L, n=50, not present</span></td><td class="num"><span class="val">0.21 &micro;s</span> <span class="spread"><span class="bar"><i style="width:20%"></i></span>5%</span></td><td class="num"><span class="val">0.21 &micro;s</span> <span class="spread"><span class="bar"><i style="width:20%"></i></span>5%</span></td></tr>
+<tr><td><span class="id">lists.in_n100</span><span class="desc">needle in L, n=100, worst case</span></td><td class="num"><span class="val">0.33 &micro;s</span> <span class="spread"><span class="bar"><i style="width:0%"></i></span>0%</span></td><td class="num"><span class="val">0.33 &micro;s</span> <span class="spread"><span class="bar"><i style="width:0%"></i></span>0%</span></td></tr>
+<tr><td><span class="id">lists.assoc_n100</span><span class="desc">A[needle], n=100</span></td><td class="num"><span class="val">0.18 &micro;s</span> <span class="spread"><span class="bar"><i style="width:24%"></i></span>6%</span></td><td class="num"><span class="val">0.17 &micro;s</span> <span class="spread"><span class="bar"><i style="width:24%"></i></span>6%</span></td></tr>
+<tr><td><span class="id">lists.find_n100</span><span class="desc">L.Find(needle), n=100, worst case</span></td><td class="num"><span class="val">0.46 &micro;s</span> <span class="spread"><span class="bar"><i style="width:8%"></i></span>2%</span></td><td class="num"><span class="val">1.48 &micro;s</span> <span class="spread"><span class="bar"><i style="width:0%"></i></span>0%</span></td></tr>
 <tr><td><span class="id">lists.in_miss_n100</span><span class="desc">needle in L, n=100, not present</span></td><td class="num"><span class="val">0.33 &micro;s</span> <span class="spread"><span class="bar"><i style="width:0%"></i></span>0%</span></td><td class="num"><span class="val">0.33 &micro;s</span> <span class="spread"><span class="bar"><i style="width:0%"></i></span>0%</span></td></tr>
-<tr><td><span class="id">lists.in_n500</span><span class="desc">needle in L, n=500, worst case</span></td><td class="num"><span class="val">1.24 &micro;s</span> <span class="spread"><span class="bar"><i style="width:8%"></i></span>2%</span></td><td class="num"><span class="val">1.24 &micro;s</span> <span class="spread"><span class="bar"><i style="width:0%"></i></span>0%</span></td></tr>
-<tr><td><span class="id">lists.assoc_n500</span><span class="desc">A[needle], n=500</span></td><td class="num"><span class="val">0.2 &micro;s</span> <span class="spread"><span class="bar"><i style="width:0%"></i></span>0%</span></td><td class="num"><span class="val">0.19 &micro;s</span> <span class="spread"><span class="bar"><i style="width:20%"></i></span>5%</span></td></tr>
-<tr><td><span class="id">lists.find_n500</span><span class="desc">L.Find(needle), n=500, worst case</span></td><td class="num"><span class="val">1.74 &micro;s</span> <span class="spread"><span class="bar"><i style="width:4%"></i></span>1%</span></td><td class="num"><span class="val">6.79 &micro;s</span> <span class="spread"><span class="bar"><i style="width:0%"></i></span>0%</span></td></tr>
-<tr><td><span class="id">lists.in_miss_n500</span><span class="desc">needle in L, n=500, not present</span></td><td class="num"><span class="val">1.24 &micro;s</span> <span class="spread"><span class="bar"><i style="width:4%"></i></span>1%</span></td><td class="num"><span class="val">1.24 &micro;s</span> <span class="spread"><span class="bar"><i style="width:0%"></i></span>0%</span></td></tr>
-<tr><td><span class="id">lists.in_n1000</span><span class="desc">needle in L, n=1000, worst case</span></td><td class="num"><span class="val">2.38 &micro;s</span> <span class="spread"><span class="bar"><i style="width:4%"></i></span>1%</span></td><td class="num"><span class="val">2.37 &micro;s</span> <span class="spread"><span class="bar"><i style="width:0%"></i></span>0%</span></td></tr>
-<tr><td><span class="id">lists.assoc_n1000</span><span class="desc">A[needle], n=1000</span></td><td class="num"><span class="val">0.21 &micro;s</span> <span class="spread"><span class="bar"><i style="width:20%"></i></span>5%</span></td><td class="num"><span class="val">0.2 &micro;s</span> <span class="spread"><span class="bar"><i style="width:20%"></i></span>5%</span></td></tr>
-<tr><td><span class="id">lists.find_n1000</span><span class="desc">L.Find(needle), n=1000, worst case</span></td><td class="num"><span class="val">3.33 &micro;s</span> <span class="spread"><span class="bar"><i style="width:4%"></i></span>1%</span></td><td class="num"><span class="val">13.4 &micro;s</span> <span class="spread"><span class="bar"><i style="width:0%"></i></span>0%</span></td></tr>
-<tr><td><span class="id">lists.in_miss_n1000</span><span class="desc">needle in L, n=1000, not present</span></td><td class="num"><span class="val">2.38 &micro;s</span> <span class="spread"><span class="bar"><i style="width:4%"></i></span>1%</span></td><td class="num"><span class="val">2.37 &micro;s</span> <span class="spread"><span class="bar"><i style="width:0%"></i></span>0%</span></td></tr>
-<tr><td><span class="id">lists.in_n5000</span><span class="desc">needle in L, n=5000, worst case</span></td><td class="num"><span class="val">11.5 &micro;s</span> <span class="spread"><span class="bar"><i style="width:4%"></i></span>1%</span></td><td class="num"><span class="val">11.5 &micro;s</span> <span class="spread"><span class="bar"><i style="width:0%"></i></span>0%</span></td></tr>
-<tr><td><span class="id">lists.assoc_n5000</span><span class="desc">A[needle], n=5000</span></td><td class="num"><span class="val">0.23 &micro;s</span> <span class="spread"><span class="bar"><i style="width:0%"></i></span>0%</span></td><td class="num"><span class="val">0.23 &micro;s</span> <span class="spread"><span class="bar"><i style="width:0%"></i></span>0%</span></td></tr>
-<tr><td><span class="id">lists.find_n5000</span><span class="desc">L.Find(needle), n=5000, worst case</span></td><td class="num"><span class="val">16.1 &micro;s</span> <span class="spread"><span class="bar"><i style="width:4%"></i></span>1%</span></td><td class="num"><span class="val">66.5 &micro;s</span> <span class="spread"><span class="bar"><i style="width:0%"></i></span>0%</span></td></tr>
-<tr><td><span class="id">lists.in_miss_n5000</span><span class="desc">needle in L, n=5000, not present</span></td><td class="num"><span class="val">11.5 &micro;s</span> <span class="spread"><span class="bar"><i style="width:4%"></i></span>1%</span></td><td class="num"><span class="val">11.5 &micro;s</span> <span class="spread"><span class="bar"><i style="width:0%"></i></span>0%</span></td></tr>
+<tr><td><span class="id">lists.in_n500</span><span class="desc">needle in L, n=500, worst case</span></td><td class="num"><span class="val">1.23 &micro;s</span> <span class="spread"><span class="bar"><i style="width:0%"></i></span>0%</span></td><td class="num"><span class="val">1.24 &micro;s</span> <span class="spread"><span class="bar"><i style="width:0%"></i></span>0%</span></td></tr>
+<tr><td><span class="id">lists.assoc_n500</span><span class="desc">A[needle], n=500</span></td><td class="num"><span class="val">0.2 &micro;s</span> <span class="spread"><span class="bar"><i style="width:20%"></i></span>5%</span></td><td class="num"><span class="val">0.19 &micro;s</span> <span class="spread"><span class="bar"><i style="width:20%"></i></span>5%</span></td></tr>
+<tr><td><span class="id">lists.find_n500</span><span class="desc">L.Find(needle), n=500, worst case</span></td><td class="num"><span class="val">1.72 &micro;s</span> <span class="spread"><span class="bar"><i style="width:0%"></i></span>0%</span></td><td class="num"><span class="val">6.79 &micro;s</span> <span class="spread"><span class="bar"><i style="width:0%"></i></span>0%</span></td></tr>
+<tr><td><span class="id">lists.in_miss_n500</span><span class="desc">needle in L, n=500, not present</span></td><td class="num"><span class="val">1.23 &micro;s</span> <span class="spread"><span class="bar"><i style="width:0%"></i></span>0%</span></td><td class="num"><span class="val">1.24 &micro;s</span> <span class="spread"><span class="bar"><i style="width:0%"></i></span>0%</span></td></tr>
+<tr><td><span class="id">lists.in_n1000</span><span class="desc">needle in L, n=1000, worst case</span></td><td class="num"><span class="val">2.36 &micro;s</span> <span class="spread"><span class="bar"><i style="width:0%"></i></span>0%</span></td><td class="num"><span class="val">2.37 &micro;s</span> <span class="spread"><span class="bar"><i style="width:0%"></i></span>0%</span></td></tr>
+<tr><td><span class="id">lists.assoc_n1000</span><span class="desc">A[needle], n=1000</span></td><td class="num"><span class="val">0.2 &micro;s</span> <span class="spread"><span class="bar"><i style="width:0%"></i></span>0%</span></td><td class="num"><span class="val">0.21 &micro;s</span> <span class="spread"><span class="bar"><i style="width:20%"></i></span>5%</span></td></tr>
+<tr><td><span class="id">lists.find_n1000</span><span class="desc">L.Find(needle), n=1000, worst case</span></td><td class="num"><span class="val">3.3 &micro;s</span> <span class="spread"><span class="bar"><i style="width:4%"></i></span>1%</span></td><td class="num"><span class="val">13.4 &micro;s</span> <span class="spread"><span class="bar"><i style="width:0%"></i></span>0%</span></td></tr>
+<tr><td><span class="id">lists.in_miss_n1000</span><span class="desc">needle in L, n=1000, not present</span></td><td class="num"><span class="val">2.36 &micro;s</span> <span class="spread"><span class="bar"><i style="width:0%"></i></span>0%</span></td><td class="num"><span class="val">2.37 &micro;s</span> <span class="spread"><span class="bar"><i style="width:0%"></i></span>0%</span></td></tr>
+<tr><td><span class="id">lists.in_n5000</span><span class="desc">needle in L, n=5000, worst case</span></td><td class="num"><span class="val">11.4 &micro;s</span> <span class="spread"><span class="bar"><i style="width:0%"></i></span>0%</span></td><td class="num"><span class="val">11.5 &micro;s</span> <span class="spread"><span class="bar"><i style="width:0%"></i></span>0%</span></td></tr>
+<tr><td><span class="id">lists.assoc_n5000</span><span class="desc">A[needle], n=5000</span></td><td class="num"><span class="val">0.23 &micro;s</span> <span class="spread"><span class="bar"><i style="width:16%"></i></span>4%</span></td><td class="num"><span class="val">0.23 &micro;s</span> <span class="spread"><span class="bar"><i style="width:0%"></i></span>0%</span></td></tr>
+<tr><td><span class="id">lists.find_n5000</span><span class="desc">L.Find(needle), n=5000, worst case</span></td><td class="num"><span class="val">16 &micro;s</span> <span class="spread"><span class="bar"><i style="width:4%"></i></span>1%</span></td><td class="num"><span class="val">66.5 &micro;s</span> <span class="spread"><span class="bar"><i style="width:0%"></i></span>0%</span></td></tr>
+<tr><td><span class="id">lists.in_miss_n5000</span><span class="desc">needle in L, n=5000, not present</span></td><td class="num"><span class="val">11.4 &micro;s</span> <span class="spread"><span class="bar"><i style="width:0%"></i></span>0%</span></td><td class="num"><span class="val">11.5 &micro;s</span> <span class="spread"><span class="bar"><i style="width:0%"></i></span>0%</span></td></tr>
 <tr><td><details><summary><span class="id">lists.build_plus</span><span class="desc">L = list(); L += j  x100</span></summary><pre class="code">for(var/i = 1 to 150000)
 	var/list/L = list()
 	for(var/j = 1 to 100)
@@ -1754,7 +1777,7 @@ for(var/i = 1 to 150000)
 	var/list/L = list()
 	for(var/j = 1 to 100)
 		L += j
-MeasureTU("lists.build_plus", "lists", "L = list(); L += j  x100", world.tick_usage - t2, 150000, 0, "per 100-element list")</pre></details></details></td><td class="num"><span class="val">12.9 &micro;s</span> <span class="spread"><span class="bar"><i style="width:0%"></i></span>0%</span></td><td class="num"><span class="val">12.8 &micro;s</span> <span class="spread"><span class="bar"><i style="width:8%"></i></span>2%</span></td></tr>
+MeasureTU("lists.build_plus", "lists", "L = list(); L += j  x100", world.tick_usage - t2, 150000, 0, "per 100-element list")</pre></details></details></td><td class="num"><span class="val">12.9 &micro;s</span> <span class="spread"><span class="bar"><i style="width:8%"></i></span>2%</span></td><td class="num"><span class="val">12.8 &micro;s</span> <span class="spread"><span class="bar"><i style="width:8%"></i></span>2%</span></td></tr>
 <tr><td><details><summary><span class="id">lists.build_add</span><span class="desc">L = list(); L.Add(j)  x100</span></summary><pre class="code">for(var/i = 1 to 150000)
 	var/list/L = list()
 	for(var/j = 1 to 100)
@@ -1763,7 +1786,7 @@ for(var/i = 1 to 150000)
 	var/list/L = list()
 	for(var/j = 1 to 100)
 		L.Add(j)
-MeasureTU("lists.build_add", "lists", "L = list(); L.Add(j)  x100", world.tick_usage - t3, 150000, 0, "per 100-element list")</pre></details></details></td><td class="num"><span class="val">19.3 &micro;s</span> <span class="spread"><span class="bar"><i style="width:4%"></i></span>1%</span></td><td class="num"><span class="val">19 &micro;s</span> <span class="spread"><span class="bar"><i style="width:8%"></i></span>2%</span></td></tr>
+MeasureTU("lists.build_add", "lists", "L = list(); L.Add(j)  x100", world.tick_usage - t3, 150000, 0, "per 100-element list")</pre></details></details></td><td class="num"><span class="val">19.2 &micro;s</span> <span class="spread"><span class="bar"><i style="width:8%"></i></span>2%</span></td><td class="num"><span class="val">19.2 &micro;s</span> <span class="spread"><span class="bar"><i style="width:4%"></i></span>1%</span></td></tr>
 <tr><td><details><summary><span class="id">lists.build_prealloc</span><span class="desc">L = new(100); indexed assign x100</span></summary><pre class="code">for(var/i = 1 to 150000)
 	var/list/L = new(100)
 	for(var/j = 1 to 100)
@@ -1772,7 +1795,7 @@ for(var/i = 1 to 150000)
 	var/list/L = new(100)
 	for(var/j = 1 to 100)
 		L[j] = j
-MeasureTU("lists.build_prealloc", "lists", "L = new(100); indexed assign x100", world.tick_usage - t4, 150000, 0, "per 100-element list")</pre></details></details></td><td class="num"><span class="val">17 &micro;s</span> <span class="spread"><span class="bar"><i style="width:4%"></i></span>1%</span></td><td class="num"><span class="val">16.7 &micro;s</span> <span class="spread"><span class="bar"><i style="width:100%"></i></span>68%</span></td></tr>
+MeasureTU("lists.build_prealloc", "lists", "L = new(100); indexed assign x100", world.tick_usage - t4, 150000, 0, "per 100-element list")</pre></details></details></td><td class="num"><span class="val">17 &micro;s</span> <span class="spread"><span class="bar"><i style="width:8%"></i></span>2%</span></td><td class="num"><span class="val">16.7 &micro;s</span> <span class="spread"><span class="bar"><i style="width:8%"></i></span>2%</span></td></tr>
 <tr><td><details><summary><span class="id">lists.copy_100</span><span class="desc">L.Copy(), 100 elements</span></summary><pre class="code">var/list/L100 = list()
 for(var/i = 1 to 100) L100 += "k[i]"
 for(var/i = 1 to 1500000)
@@ -1784,35 +1807,35 @@ var/t5 = world.tick_usage
 for(var/i = 1 to 1500000)
 	var/list/C = L100.Copy()
 	CACC += C.len
-MeasureTU("lists.copy_100", "lists", "L.Copy(), 100 elements", world.tick_usage - t5, 1500000, 0, null)</pre></details></details></td><td class="num"><span class="val">3.13 &micro;s</span> <span class="spread"><span class="bar"><i style="width:4%"></i></span>1%</span></td><td class="num"><span class="val">3.11 &micro;s</span> <span class="spread"><span class="bar"><i style="width:4%"></i></span>1%</span></td></tr>
+MeasureTU("lists.copy_100", "lists", "L.Copy(), 100 elements", world.tick_usage - t5, 1500000, 0, null)</pre></details></details></td><td class="num"><span class="val">3.11 &micro;s</span> <span class="spread"><span class="bar"><i style="width:0%"></i></span>0%</span></td><td class="num"><span class="val">3.15 &micro;s</span> <span class="spread"><span class="bar"><i style="width:20%"></i></span>5%</span></td></tr>
 <tr class="grouphead"><td colspan="3">dispatch</td></tr>
 <tr><td><span class="id">dispatch.istype</span><span class="desc">istype(O, /obj/thing)</span></td><td class="num"><span class="val">0.12 &micro;s</span> <span class="spread"><span class="bar"><i style="width:0%"></i></span>0%</span></td><td class="num"><span class="val">0.12 &micro;s</span> <span class="spread"><span class="bar"><i style="width:0%"></i></span>0%</span></td></tr>
 <tr><td><span class="id">dispatch.type_eq</span><span class="desc">O.type == /obj/thing</span></td><td class="num"><span class="val">0.12 &micro;s</span> <span class="spread"><span class="bar"><i style="width:0%"></i></span>0%</span></td><td class="num"><span class="val">0.12 &micro;s</span> <span class="spread"><span class="bar"><i style="width:0%"></i></span>0%</span></td></tr>
 <tr><td><span class="id">dispatch.bitfield</span><span class="desc">O.flags &amp; FLAG_A</span></td><td class="num"><span class="val">0.11 &micro;s</span> <span class="spread"><span class="bar"><i style="width:0%"></i></span>0%</span></td><td class="num"><span class="val">0.11 &micro;s</span> <span class="spread"><span class="bar"><i style="width:0%"></i></span>0%</span></td></tr>
 <tr><td><span class="id">dispatch.assoc_category</span><span class="desc">O.cats assoc lookup</span></td><td class="num"><span class="val">0.17 &micro;s</span> <span class="spread"><span class="bar"><i style="width:0%"></i></span>0%</span></td><td class="num"><span class="val">0.17 &micro;s</span> <span class="spread"><span class="bar"><i style="width:0%"></i></span>0%</span></td></tr>
-<tr><td><span class="id">dispatch.locate_in_contents</span><span class="desc">locate(type) in O, 1 item</span></td><td class="num"><span class="val">0.18 &micro;s</span> <span class="spread"><span class="bar"><i style="width:24%"></i></span>6%</span></td><td class="num"><span class="val">0.18 &micro;s</span> <span class="spread"><span class="bar"><i style="width:0%"></i></span>0%</span></td></tr>
+<tr><td><span class="id">dispatch.locate_in_contents</span><span class="desc">locate(type) in O, 1 item</span></td><td class="num"><span class="val">0.18 &micro;s</span> <span class="spread"><span class="bar"><i style="width:0%"></i></span>0%</span></td><td class="num"><span class="val">0.18 &micro;s</span> <span class="spread"><span class="bar"><i style="width:0%"></i></span>0%</span></td></tr>
 <tr><td><span class="id">dispatch.istype_d1</span><span class="desc">istype, depth-1 hit, untyped var</span></td><td class="num"><span class="val">0.12 &micro;s</span> <span class="spread"><span class="bar"><i style="width:0%"></i></span>0%</span></td><td class="num"><span class="val">0.12 &micro;s</span> <span class="spread"><span class="bar"><i style="width:0%"></i></span>0%</span></td></tr>
 <tr><td><span class="id">dispatch.istype_d8</span><span class="desc">istype, depth-8 exact hit</span></td><td class="num"><span class="val">0.12 &micro;s</span> <span class="spread"><span class="bar"><i style="width:0%"></i></span>0%</span></td><td class="num"><span class="val">0.12 &micro;s</span> <span class="spread"><span class="bar"><i style="width:0%"></i></span>0%</span></td></tr>
-<tr><td><span class="id">dispatch.istype_ancestor</span><span class="desc">istype, depth-8 instance vs depth-1 ancestor</span></td><td class="num"><span class="val">0.14 &micro;s</span> <span class="spread"><span class="bar"><i style="width:0%"></i></span>0%</span></td><td class="num"><span class="val">0.13 &micro;s</span> <span class="spread"><span class="bar"><i style="width:0%"></i></span>0%</span></td></tr>
-<tr><td><span class="id">dispatch.istype_unrelated</span><span class="desc">istype, unrelated-branch miss</span></td><td class="num"><span class="val">0.13 &micro;s</span> <span class="spread"><span class="bar"><i style="width:0%"></i></span>0%</span></td><td class="num"><span class="val">0.14 &micro;s</span> <span class="spread"><span class="bar"><i style="width:28%"></i></span>7%</span></td></tr>
+<tr><td><span class="id">dispatch.istype_ancestor</span><span class="desc">istype, depth-8 instance vs depth-1 ancestor</span></td><td class="num"><span class="val">0.14 &micro;s</span> <span class="spread"><span class="bar"><i style="width:28%"></i></span>7%</span></td><td class="num"><span class="val">0.13 &micro;s</span> <span class="spread"><span class="bar"><i style="width:0%"></i></span>0%</span></td></tr>
+<tr><td><span class="id">dispatch.istype_unrelated</span><span class="desc">istype, unrelated-branch miss</span></td><td class="num"><span class="val">0.13 &micro;s</span> <span class="spread"><span class="bar"><i style="width:32%"></i></span>8%</span></td><td class="num"><span class="val">0.14 &micro;s</span> <span class="spread"><span class="bar"><i style="width:28%"></i></span>7%</span></td></tr>
 <tr><td><details><summary><span class="id">dispatch.typesof_d1</span><span class="desc">typesof, depth-1 mob type, 9 subtypes</span></summary><pre class="code">for(var/i = 1 to Rt)
 	var/list/L = typesof(/mob/pc_m1)
 	if(L.len &lt; 0) TSGUARD++</pre><details class="inner"><summary class="srcnote">as measured, verbatim harness code (src/perf_core.dm)</summary><pre class="code">var/t9 = world.tick_usage
 for(var/i = 1 to Rt)
 	var/list/L = typesof(/mob/pc_m1)
 	if(L.len &lt; 0) TSGUARD++
-var/ts_d1 = MeasureTU("dispatch.typesof_d1", "dispatch", "typesof, depth-1 mob type, 9 subtypes", world.tick_usage - t9, Rt, 1, null)</pre></details></details></td><td class="num"><span class="val">0.46 &micro;s</span> <span class="spread"><span class="bar"><i style="width:0%"></i></span>0%</span></td><td class="num"><span class="val">0.46 &micro;s</span> <span class="spread"><span class="bar"><i style="width:0%"></i></span>0%</span></td></tr>
+var/ts_d1 = MeasureTU("dispatch.typesof_d1", "dispatch", "typesof, depth-1 mob type, 9 subtypes", world.tick_usage - t9, Rt, 1, null)</pre></details></details></td><td class="num"><span class="val">0.45 &micro;s</span> <span class="spread"><span class="bar"><i style="width:8%"></i></span>2%</span></td><td class="num"><span class="val">0.46 &micro;s</span> <span class="spread"><span class="bar"><i style="width:0%"></i></span>0%</span></td></tr>
 <tr><td><details><summary><span class="id">dispatch.typesof_d8</span><span class="desc">typesof, depth-8 mob type, 1 subtype</span></summary><pre class="code">for(var/i = 1 to Rt)
 	var/list/L = typesof(/mob/pc_m1/m2/m3/m4/m5/m6/m7/m8)
 	if(L.len &lt; 0) TSGUARD++</pre><details class="inner"><summary class="srcnote">as measured, verbatim harness code (src/perf_core.dm)</summary><pre class="code">var/t10 = world.tick_usage
 for(var/i = 1 to Rt)
 	var/list/L = typesof(/mob/pc_m1/m2/m3/m4/m5/m6/m7/m8)
 	if(L.len &lt; 0) TSGUARD++
-var/ts_d8 = MeasureTU("dispatch.typesof_d8", "dispatch", "typesof, depth-8 mob type, 1 subtype", world.tick_usage - t10, Rt, 1, null)</pre></details></details></td><td class="num"><span class="val">0.26 &micro;s</span> <span class="spread"><span class="bar"><i style="width:100%"></i></span>31%</span></td><td class="num"><span class="val">0.26 &micro;s</span> <span class="spread"><span class="bar"><i style="width:16%"></i></span>4%</span></td></tr>
+var/ts_d8 = MeasureTU("dispatch.typesof_d8", "dispatch", "typesof, depth-8 mob type, 1 subtype", world.tick_usage - t10, Rt, 1, null)</pre></details></details></td><td class="num"><span class="val">0.26 &micro;s</span> <span class="spread"><span class="bar"><i style="width:0%"></i></span>0%</span></td><td class="num"><span class="val">0.26 &micro;s</span> <span class="spread"><span class="bar"><i style="width:16%"></i></span>4%</span></td></tr>
 <tr class="grouphead"><td colspan="3">calls</td></tr>
 <tr><td><span class="id">calls.global_proc</span><span class="desc">GlobalProc(), empty</span></td><td class="num"><span class="val">0.18 &micro;s</span> <span class="spread"><span class="bar"><i style="width:0%"></i></span>0%</span></td><td class="num"><span class="val">0.18 &micro;s</span> <span class="spread"><span class="bar"><i style="width:0%"></i></span>0%</span></td></tr>
 <tr><td><span class="id">calls.datum_method</span><span class="desc">D.Method(), empty</span></td><td class="num"><span class="val">0.22 &micro;s</span> <span class="spread"><span class="bar"><i style="width:56%"></i></span>14%</span></td><td class="num"><span class="val">0.25 &micro;s</span> <span class="spread"><span class="bar"><i style="width:0%"></i></span>0%</span></td></tr>
-<tr><td><span class="id">calls.datum_method_dot</span><span class="desc">D.Method(), sets . = 1</span></td><td class="num"><span class="val">0.27 &micro;s</span> <span class="spread"><span class="bar"><i style="width:44%"></i></span>11%</span></td><td class="num"><span class="val">0.3 &micro;s</span> <span class="spread"><span class="bar"><i style="width:12%"></i></span>3%</span></td></tr>
+<tr><td><span class="id">calls.datum_method_dot</span><span class="desc">D.Method(), sets . = 1</span></td><td class="num"><span class="val">0.27 &micro;s</span> <span class="spread"><span class="bar"><i style="width:44%"></i></span>11%</span></td><td class="num"><span class="val">0.3 &micro;s</span> <span class="spread"><span class="bar"><i style="width:0%"></i></span>0%</span></td></tr>
 <tr><td><details><summary><span class="id">vars.local</span><span class="desc">acc += local_var</span></summary><pre class="code">var/lv = 5
 for(var/o = 1 to 3)
 	for(var/i = 1 to 10000000)
@@ -1845,7 +1868,7 @@ var/t5 = world.tick_usage
 for(var/o = 1 to 3)
 	for(var/i = 1 to 10000000)
 		CACC += world.time
-MeasureTU("vars.world_time", "calls", "acc += world.time", world.tick_usage - t5, 30000000, 1, null)</pre></details></details></td><td class="num"><span class="val">0.07 &micro;s</span> <span class="spread"><span class="bar"><i style="width:56%"></i></span>14%</span> <span class="flag">BASELINE_HEAVY</span></td><td class="num"><span class="val">0.07 &micro;s</span> <span class="spread"><span class="bar"><i style="width:0%"></i></span>0%</span> <span class="flag">BASELINE_HEAVY</span></td></tr>
+MeasureTU("vars.world_time", "calls", "acc += world.time", world.tick_usage - t5, 30000000, 1, null)</pre></details></details></td><td class="num"><span class="val">0.06 &micro;s</span> <span class="spread"><span class="bar"><i style="width:68%"></i></span>17%</span> <span class="flag">BASELINE_HEAVY</span></td><td class="num"><span class="val">0.07 &micro;s</span> <span class="spread"><span class="bar"><i style="width:0%"></i></span>0%</span> <span class="flag">BASELINE_HEAVY</span></td></tr>
 <tr><td><details><summary><span class="id">vars.datum</span><span class="desc">acc += D.x</span></summary><pre class="code">for(var/o = 1 to 3)
 	for(var/i = 1 to 10000000)
 		CACC += H.x</pre><details class="inner"><summary class="srcnote">as measured, verbatim harness code (src/perf_core.dm)</summary><pre class="code">CACC = 0
@@ -1862,7 +1885,7 @@ var/t0 = world.tick_usage
 for(var/i = 1 to R)
 	var/s = "[a][b]"
 	CACC += length(s)
-MeasureTU("strings.embed", "strings", "s = embedded expression", world.tick_usage - t0, R, 1, null)</pre></details></details></td><td class="num"><span class="val">0.31 &micro;s</span> <span class="spread"><span class="bar"><i style="width:12%"></i></span>3%</span></td><td class="num"><span class="val">0.33 &micro;s</span> <span class="spread"><span class="bar"><i style="width:12%"></i></span>3%</span></td></tr>
+MeasureTU("strings.embed", "strings", "s = embedded expression", world.tick_usage - t0, R, 1, null)</pre></details></details></td><td class="num"><span class="val">0.32 &micro;s</span> <span class="spread"><span class="bar"><i style="width:0%"></i></span>0%</span></td><td class="num"><span class="val">0.35 &micro;s</span> <span class="spread"><span class="bar"><i style="width:0%"></i></span>0%</span></td></tr>
 <tr><td><details><summary><span class="id">strings.concat</span><span class="desc">s = a + b</span></summary><pre class="code">for(var/i = 1 to R)
 	var/s = a + b
 	CACC += length(s)</pre><details class="inner"><summary class="srcnote">as measured, verbatim harness code (src/perf_core.dm)</summary><pre class="code">CACC = 0
@@ -1870,7 +1893,7 @@ var/t1 = world.tick_usage
 for(var/i = 1 to R)
 	var/s = a + b
 	CACC += length(s)
-MeasureTU("strings.concat", "strings", "s = a + b", world.tick_usage - t1, R, 1, null)</pre></details></details></td><td class="num"><span class="val">0.28 &micro;s</span> <span class="spread"><span class="bar"><i style="width:16%"></i></span>4%</span></td><td class="num"><span class="val">0.27 &micro;s</span> <span class="spread"><span class="bar"><i style="width:0%"></i></span>0%</span></td></tr>
+MeasureTU("strings.concat", "strings", "s = a + b", world.tick_usage - t1, R, 1, null)</pre></details></details></td><td class="num"><span class="val">0.28 &micro;s</span> <span class="spread"><span class="bar"><i style="width:0%"></i></span>0%</span></td><td class="num"><span class="val">0.27 &micro;s</span> <span class="spread"><span class="bar"><i style="width:0%"></i></span>0%</span></td></tr>
 <tr><td><details><summary><span class="id">strings.num2text</span><span class="desc">num2text(i)</span></summary><pre class="code">var/tu2 = world.tick_usage
 for(var/i = 1 to 2000000)
 	CACC += length(num2text(i))</pre><details class="inner"><summary class="srcnote">as measured, verbatim harness code (src/perf_core.dm)</summary><pre class="code">// These two are timed with tick_usage: both routines are 2 to 4x
@@ -1883,7 +1906,7 @@ CACC = 0
 var/tu2 = world.tick_usage
 for(var/i = 1 to 2000000)
 	CACC += length(num2text(i))
-MeasureTU("strings.num2text", "strings", "num2text(i)", world.tick_usage - tu2, 2000000, 1, null)</pre></details></details></td><td class="num"><span class="val">0.58 &micro;s</span> <span class="spread"><span class="bar"><i style="width:0%"></i></span>0%</span></td><td class="num"><span class="val">0.58 &micro;s</span> <span class="spread"><span class="bar"><i style="width:12%"></i></span>3%</span></td></tr>
+MeasureTU("strings.num2text", "strings", "num2text(i)", world.tick_usage - tu2, 2000000, 1, null)</pre></details></details></td><td class="num"><span class="val">0.57 &micro;s</span> <span class="spread"><span class="bar"><i style="width:0%"></i></span>0%</span></td><td class="num"><span class="val">0.58 &micro;s</span> <span class="spread"><span class="bar"><i style="width:8%"></i></span>2%</span></td></tr>
 <tr><td><details><summary><span class="id">strings.findtext</span><span class="desc">findtext, 43-char haystack</span></summary><pre class="code">var/hay = "the quick brown fox jumps over the lazy dog"
 var/tu3 = world.tick_usage
 for(var/i = 1 to 1000000)
@@ -1892,7 +1915,7 @@ CACC = 0
 var/tu3 = world.tick_usage
 for(var/i = 1 to 1000000)
 	CACC += findtext(hay, "lazy")
-MeasureTU("strings.findtext", "strings", "findtext, 43-char haystack", world.tick_usage - tu3, 1000000, 1, null)</pre></details></details></td><td class="num"><span class="val">0.38 &micro;s</span> <span class="spread"><span class="bar"><i style="width:0%"></i></span>0%</span></td><td class="num"><span class="val">0.38 &micro;s</span> <span class="spread"><span class="bar"><i style="width:0%"></i></span>0%</span></td></tr>
+MeasureTU("strings.findtext", "strings", "findtext, 43-char haystack", world.tick_usage - tu3, 1000000, 1, null)</pre></details></details></td><td class="num"><span class="val">0.38 &micro;s</span> <span class="spread"><span class="bar"><i style="width:12%"></i></span>3%</span></td><td class="num"><span class="val">0.38 &micro;s</span> <span class="spread"><span class="bar"><i style="width:0%"></i></span>0%</span></td></tr>
 <tr class="grouphead"><td colspan="3">alloc</td></tr>
 <tr><td><span class="id">alloc.datum</span><span class="desc">new /datum</span></td><td class="num"><span class="val">0.25 &micro;s</span> <span class="spread"><span class="bar"><i style="width:0%"></i></span>0%</span></td><td class="num"><span class="val">0.25 &micro;s</span> <span class="spread"><span class="bar"><i style="width:0%"></i></span>0%</span></td></tr>
 <tr><td><details><summary><span class="id">alloc.datum_holder</span><span class="desc">new /datum/pc_holder</span></summary><pre class="code">	AllocOne("alloc.datum_holder", /datum/pc_holder, 10000000)
@@ -1917,7 +1940,7 @@ AllocOne(id, T, reps)
 	return MeasureUTU(id, "alloc", "new [T]", world.tick_usage - t0, reps, UNROLL, null)
 
 // ---------------- movement ----------------
-</pre><p class="srcnote">X10(s) repeats the statement ten times per loop pass; UNROLL = 10. Defined in src/framework.dm.</p></details></details></td><td class="num"><span class="val">0.26 &micro;s</span> <span class="spread"><span class="bar"><i style="width:0%"></i></span>0%</span></td><td class="num"><span class="val">0.26 &micro;s</span> <span class="spread"><span class="bar"><i style="width:0%"></i></span>0%</span></td></tr>
+</pre><p class="srcnote">X10(s) repeats the statement ten times per loop pass; UNROLL = 10. Defined in src/framework.dm.</p></details></details></td><td class="num"><span class="val">0.26 &micro;s</span> <span class="spread"><span class="bar"><i style="width:0%"></i></span>0%</span></td><td class="num"><span class="val">0.26 &micro;s</span> <span class="spread"><span class="bar"><i style="width:16%"></i></span>4%</span></td></tr>
 <tr><td><details><summary><span class="id">alloc.obj</span><span class="desc">new /obj</span></summary><pre class="code">	AllocOne("alloc.obj", /obj, 4000000)
 
 AllocOne(id, T, reps)
@@ -1940,7 +1963,7 @@ AllocOne(id, T, reps)
 	return MeasureUTU(id, "alloc", "new [T]", world.tick_usage - t0, reps, UNROLL, null)
 
 // ---------------- movement ----------------
-</pre><p class="srcnote">X10(s) repeats the statement ten times per loop pass; UNROLL = 10. Defined in src/framework.dm.</p></details></details></td><td class="num"><span class="val">0.46 &micro;s</span> <span class="spread"><span class="bar"><i style="width:8%"></i></span>2%</span></td><td class="num"><span class="val">0.45 &micro;s</span> <span class="spread"><span class="bar"><i style="width:8%"></i></span>2%</span></td></tr>
+</pre><p class="srcnote">X10(s) repeats the statement ten times per loop pass; UNROLL = 10. Defined in src/framework.dm.</p></details></details></td><td class="num"><span class="val">0.45 &micro;s</span> <span class="spread"><span class="bar"><i style="width:0%"></i></span>0%</span></td><td class="num"><span class="val">0.45 &micro;s</span> <span class="spread"><span class="bar"><i style="width:8%"></i></span>2%</span></td></tr>
 <tr><td><details><summary><span class="id">alloc.mob</span><span class="desc">new /mob</span></summary><pre class="code">	AllocOne("alloc.mob", /mob, 4000000)
 
 AllocOne(id, T, reps)
@@ -1963,20 +1986,20 @@ AllocOne(id, T, reps)
 	return MeasureUTU(id, "alloc", "new [T]", world.tick_usage - t0, reps, UNROLL, null)
 
 // ---------------- movement ----------------
-</pre><p class="srcnote">X10(s) repeats the statement ten times per loop pass; UNROLL = 10. Defined in src/framework.dm.</p></details></details></td><td class="num"><span class="val">0.47 &micro;s</span> <span class="spread"><span class="bar"><i style="width:8%"></i></span>2%</span></td><td class="num"><span class="val">0.47 &micro;s</span> <span class="spread"><span class="bar"><i style="width:0%"></i></span>0%</span></td></tr>
+</pre><p class="srcnote">X10(s) repeats the statement ten times per loop pass; UNROLL = 10. Defined in src/framework.dm.</p></details></details></td><td class="num"><span class="val">0.47 &micro;s</span> <span class="spread"><span class="bar"><i style="width:0%"></i></span>0%</span></td><td class="num"><span class="val">0.47 &micro;s</span> <span class="spread"><span class="bar"><i style="width:8%"></i></span>2%</span></td></tr>
 <tr><td><span class="id">alloc.datum_30vars</span><span class="desc">new /datum/pc_vars30</span></td><td class="num"><span class="val">0.25 &micro;s</span> <span class="spread"><span class="bar"><i style="width:0%"></i></span>0%</span></td><td class="num"><span class="val">0.25 &micro;s</span> <span class="spread"><span class="bar"><i style="width:0%"></i></span>0%</span></td></tr>
-<tr><td><span class="id">alloc.datum_3lists</span><span class="desc">new /datum/pc_lists3</span></td><td class="num"><span class="val">1.14 &micro;s</span> <span class="spread"><span class="bar"><i style="width:16%"></i></span>4%</span></td><td class="num"><span class="val">1.15 &micro;s</span> <span class="spread"><span class="bar"><i style="width:8%"></i></span>2%</span></td></tr>
+<tr><td><span class="id">alloc.datum_3lists</span><span class="desc">new /datum/pc_lists3</span></td><td class="num"><span class="val">1.13 &micro;s</span> <span class="spread"><span class="bar"><i style="width:8%"></i></span>2%</span></td><td class="num"><span class="val">1.14 &micro;s</span> <span class="spread"><span class="bar"><i style="width:8%"></i></span>2%</span></td></tr>
 <tr class="grouphead"><td colspan="3">movement</td></tr>
 <tr><td><details><summary><span class="id">movement.loc_assign</span><span class="desc">M.loc = T</span></summary><pre class="code">for(var/i = 1 to 6000000)
 	M.loc = (i % 2) ? P1 : P2</pre><details class="inner"><summary class="srcnote">as measured, verbatim harness code (src/perf_core.dm)</summary><pre class="code">var/t0 = world.tick_usage
 for(var/i = 1 to 6000000)
 	M.loc = (i % 2) ? P1 : P2
-MeasureTU("movement.loc_assign", "movement", "M.loc = T", world.tick_usage - t0, 6000000, 1, "plain turf, no callbacks")</pre></details></details></td><td class="num"><span class="val">0.28 &micro;s</span> <span class="spread"><span class="bar"><i style="width:16%"></i></span>4%</span></td><td class="num"><span class="val">0.27 &micro;s</span> <span class="spread"><span class="bar"><i style="width:16%"></i></span>4%</span></td></tr>
+MeasureTU("movement.loc_assign", "movement", "M.loc = T", world.tick_usage - t0, 6000000, 1, "plain turf, no callbacks")</pre></details></details></td><td class="num"><span class="val">0.27 &micro;s</span> <span class="spread"><span class="bar"><i style="width:0%"></i></span>0%</span></td><td class="num"><span class="val">0.27 &micro;s</span> <span class="spread"><span class="bar"><i style="width:28%"></i></span>7%</span></td></tr>
 <tr><td><details><summary><span class="id">movement.move_proc</span><span class="desc">M.Move(T)</span></summary><pre class="code">for(var/i = 1 to 2000000)
 	M.Move((i % 2) ? P1 : P2)</pre><details class="inner"><summary class="srcnote">as measured, verbatim harness code (src/perf_core.dm)</summary><pre class="code">var/t1 = world.tick_usage
 for(var/i = 1 to 2000000)
 	M.Move((i % 2) ? P1 : P2)
-MeasureTU("movement.move_proc", "movement", "M.Move(T)", world.tick_usage - t1, 2000000, 1, "plain turf, engine callbacks only")</pre></details></details></td><td class="num"><span class="val">2.15 &micro;s</span> <span class="spread"><span class="bar"><i style="width:32%"></i></span>8%</span></td><td class="num"><span class="val">2.1 &micro;s</span> <span class="spread"><span class="bar"><i style="width:4%"></i></span>1%</span></td></tr>
+MeasureTU("movement.move_proc", "movement", "M.Move(T)", world.tick_usage - t1, 2000000, 1, "plain turf, engine callbacks only")</pre></details></details></td><td class="num"><span class="val">2.12 &micro;s</span> <span class="spread"><span class="bar"><i style="width:24%"></i></span>6%</span></td><td class="num"><span class="val">2.11 &micro;s</span> <span class="spread"><span class="bar"><i style="width:28%"></i></span>7%</span></td></tr>
 <tr><td><details><summary><span class="id">movement.move_proc_overridden</span><span class="desc">M.Move(T) with 4 overridden callbacks</span></summary><pre class="code">var/turf/pc_turf/A = new(locate(20, 20, 1))
 var/turf/pc_turf/B = new(locate(21, 20, 1))
 M.loc = A
@@ -1988,7 +2011,7 @@ M.loc = A
 var/t2 = world.tick_usage
 for(var/i = 1 to 2000000)
 	M.Move((i % 2) ? A : B)
-MeasureTU("movement.move_proc_overridden", "movement", "M.Move(T) with 4 overridden callbacks", world.tick_usage - t2, 2000000, 1, "cost of user hooks on top of Move()")</pre></details></details></td><td class="num"><span class="val">3.42 &micro;s</span> <span class="spread"><span class="bar"><i style="width:20%"></i></span>5%</span></td><td class="num"><span class="val">3.4 &micro;s</span> <span class="spread"><span class="bar"><i style="width:4%"></i></span>1%</span></td></tr>
+MeasureTU("movement.move_proc_overridden", "movement", "M.Move(T) with 4 overridden callbacks", world.tick_usage - t2, 2000000, 1, "cost of user hooks on top of Move()")</pre></details></details></td><td class="num"><span class="val">3.38 &micro;s</span> <span class="spread"><span class="bar"><i style="width:28%"></i></span>7%</span></td><td class="num"><span class="val">3.4 &micro;s</span> <span class="spread"><span class="bar"><i style="width:16%"></i></span>4%</span></td></tr>
 <tr class="grouphead"><td colspan="3">io</td></tr>
 <tr><td><details><summary><span class="id">io.file_write_short</span><span class="desc">file &lt;&lt; 10-char line</span></summary><pre class="code">	(lt1 == lt0) ? 1 : 0, 1,
 	"world.time [lt0] before, [lt1] after [log_writes] writes")
@@ -2008,20 +2031,20 @@ var/sdt = Median3(IO_WritePass(probe, "short line", 10000), \
 	IO_WritePass(probe, "short line", 10000), \
 	IO_WritePass(probe, "short line", 10000))
 var/short_us = MeasureTU("io.file_write_short", "io", "file &lt;&lt; 10-char line",
-	sdt, 10000, 1, "median of 3 passes")</pre><p class="srcnote">src/perf_io.dm</p></details></td><td class="num"><span class="val">8.56 &micro;s</span> <span class="spread"><span class="bar"><i style="width:8%"></i></span>2%</span></td><td class="num"><span class="val">8.46 &micro;s</span> <span class="spread"><span class="bar"><i style="width:4%"></i></span>1%</span></td></tr>
+	sdt, 10000, 1, "median of 3 passes")</pre><p class="srcnote">src/perf_io.dm</p></details></td><td class="num"><span class="val">8.41 &micro;s</span> <span class="spread"><span class="bar"><i style="width:4%"></i></span>1%</span></td><td class="num"><span class="val">8.45 &micro;s</span> <span class="spread"><span class="bar"><i style="width:4%"></i></span>1%</span></td></tr>
 <tr><td><details><summary><span class="id">io.file_write_long</span><span class="desc">file &lt;&lt; 1000-char line</span></summary><pre class="code">var/long_line = IO_LongLine()
 var/ldt = Median3(IO_WritePass(probe, long_line, 10000), \
 	IO_WritePass(probe, long_line, 10000), \
 	IO_WritePass(probe, long_line, 10000))
 var/long_us = MeasureTU("io.file_write_long", "io", "file &lt;&lt; 1000-char line",
-	ldt, 10000, 1, "median of 3 passes")</pre><p class="srcnote">src/perf_io.dm</p></details></td><td class="num"><span class="val">10 &micro;s</span> <span class="spread"><span class="bar"><i style="width:4%"></i></span>1%</span></td><td class="num"><span class="val">9.98 &micro;s</span> <span class="spread"><span class="bar"><i style="width:4%"></i></span>1%</span></td></tr>
+	ldt, 10000, 1, "median of 3 passes")</pre><p class="srcnote">src/perf_io.dm</p></details></td><td class="num"><span class="val">9.91 &micro;s</span> <span class="spread"><span class="bar"><i style="width:0%"></i></span>0%</span></td><td class="num"><span class="val">9.97 &micro;s</span> <span class="spread"><span class="bar"><i style="width:4%"></i></span>1%</span></td></tr>
 <tr><td><details><summary><span class="id">io.world_log_short</span><span class="desc">world.log &lt;&lt; 10-char line</span></summary><pre class="code">var/tu2 = world.tick_usage
 for(var/i = 1 to 400000)
 	world.log &lt;&lt; "short line"</pre><details class="inner"><summary class="srcnote">as measured, verbatim harness code (src/perf_io.dm)</summary><pre class="code">var/tu2 = world.tick_usage
 for(var/i = 1 to 400000)
 	world.log &lt;&lt; "short line"
 var/log_us = MeasureTU("io.world_log_short", "io", "world.log &lt;&lt; 10-char line",
-	world.tick_usage - tu2, 400000, 1, null)</pre></details></details></td><td class="num"><span class="val">1.95 &micro;s</span> <span class="spread"><span class="bar"><i style="width:8%"></i></span>2%</span></td><td class="num"><span class="val">1.92 &micro;s</span> <span class="spread"><span class="bar"><i style="width:4%"></i></span>1%</span></td></tr>
+	world.tick_usage - tu2, 400000, 1, null)</pre></details></details></td><td class="num"><span class="val">1.92 &micro;s</span> <span class="spread"><span class="bar"><i style="width:4%"></i></span>1%</span></td><td class="num"><span class="val">1.92 &micro;s</span> <span class="spread"><span class="bar"><i style="width:4%"></i></span>1%</span></td></tr>
 <tr><td><details><summary><span class="id">io.file_write_interpolated</span><span class="desc">file &lt;&lt; line with one embedded value</span></summary><pre class="code">var/interp_writes = 15000
 var/tu3 = world.tick_usage
 for(var/i = 1 to interp_writes)
@@ -2037,20 +2060,20 @@ var/tu3 = world.tick_usage
 for(var/i = 1 to interp_writes)
 	probe &lt;&lt; "iteration [i] of the run"
 MeasureTU("io.file_write_interpolated", "io", "file &lt;&lt; line with one embedded value",
-	world.tick_usage - tu3, interp_writes, 1, "includes string building")</pre></details></details></td><td class="num"><span class="val">9.27 &micro;s</span> <span class="spread"><span class="bar"><i style="width:8%"></i></span>2%</span></td><td class="num"><span class="val">9.2 &micro;s</span> <span class="spread"><span class="bar"><i style="width:4%"></i></span>1%</span></td></tr>
+	world.tick_usage - tu3, interp_writes, 1, "includes string building")</pre></details></details></td><td class="num"><span class="val">9.13 &micro;s</span> <span class="spread"><span class="bar"><i style="width:4%"></i></span>1%</span></td><td class="num"><span class="val">9.16 &micro;s</span> <span class="spread"><span class="bar"><i style="width:0%"></i></span>0%</span></td></tr>
 <tr class="grouphead"><td colspan="3">calls</td></tr>
 <tr><td><span class="id">calls.user_0args</span><span class="desc">user proc, 0 args</span></td><td class="num"><span class="val">0.18 &micro;s</span> <span class="spread"><span class="bar"><i style="width:0%"></i></span>0%</span></td><td class="num"><span class="val">0.18 &micro;s</span> <span class="spread"><span class="bar"><i style="width:0%"></i></span>0%</span></td></tr>
-<tr><td><span class="id">calls.user_1arg</span><span class="desc">user proc, 1 arg</span></td><td class="num"><span class="val">0.21 &micro;s</span> <span class="spread"><span class="bar"><i style="width:0%"></i></span>0%</span></td><td class="num"><span class="val">0.21 &micro;s</span> <span class="spread"><span class="bar"><i style="width:20%"></i></span>5%</span></td></tr>
+<tr><td><span class="id">calls.user_1arg</span><span class="desc">user proc, 1 arg</span></td><td class="num"><span class="val">0.21 &micro;s</span> <span class="spread"><span class="bar"><i style="width:20%"></i></span>5%</span></td><td class="num"><span class="val">0.2 &micro;s</span> <span class="spread"><span class="bar"><i style="width:20%"></i></span>5%</span></td></tr>
 <tr><td><span class="id">calls.user_4args</span><span class="desc">user proc, 4 args</span></td><td class="num"><span class="val">0.28 &micro;s</span> <span class="spread"><span class="bar"><i style="width:0%"></i></span>0%</span></td><td class="num"><span class="val">0.28 &micro;s</span> <span class="spread"><span class="bar"><i style="width:0%"></i></span>0%</span></td></tr>
-<tr><td><span class="id">calls.user_8args</span><span class="desc">user proc, 8 args</span></td><td class="num"><span class="val">0.39 &micro;s</span> <span class="spread"><span class="bar"><i style="width:0%"></i></span>0%</span></td><td class="num"><span class="val">0.39 &micro;s</span> <span class="spread"><span class="bar"><i style="width:0%"></i></span>0%</span></td></tr>
+<tr><td><span class="id">calls.user_8args</span><span class="desc">user proc, 8 args</span></td><td class="num"><span class="val">0.39 &micro;s</span> <span class="spread"><span class="bar"><i style="width:12%"></i></span>3%</span></td><td class="num"><span class="val">0.39 &micro;s</span> <span class="spread"><span class="bar"><i style="width:0%"></i></span>0%</span></td></tr>
 <tr><td><span class="id">calls.builtin_abs</span><span class="desc">abs(x), hard builtin</span></td><td class="num"><span class="val">0.03 &micro;s</span> <span class="spread"><span class="bar"><i style="width:0%"></i></span>0%</span></td><td class="num"><span class="val">0.03 &micro;s</span> <span class="spread"><span class="bar"><i style="width:0%"></i></span>0%</span></td></tr>
-<tr><td><span class="id">calls.builtin_max</span><span class="desc">max(a,b), hard builtin</span></td><td class="num"><span class="val">0.09 &micro;s</span> <span class="spread"><span class="bar"><i style="width:0%"></i></span>0%</span></td><td class="num"><span class="val">0.08 &micro;s</span> <span class="spread"><span class="bar"><i style="width:48%"></i></span>12%</span></td></tr>
-<tr><td><span class="id">calls.builtin_vector_dot</span><span class="desc">vector.Dot(), soft-called builtin</span></td><td class="num"><span class="val">0.12 &micro;s</span> <span class="spread"><span class="bar"><i style="width:32%"></i></span>8%</span></td><td class="num"><span class="val">0.12 &micro;s</span> <span class="spread"><span class="bar"><i style="width:32%"></i></span>8%</span></td></tr>
+<tr><td><span class="id">calls.builtin_max</span><span class="desc">max(a,b), hard builtin</span></td><td class="num"><span class="val">0.09 &micro;s</span> <span class="spread"><span class="bar"><i style="width:44%"></i></span>11%</span></td><td class="num"><span class="val">0.08 &micro;s</span> <span class="spread"><span class="bar"><i style="width:48%"></i></span>12%</span></td></tr>
+<tr><td><span class="id">calls.builtin_vector_dot</span><span class="desc">vector.Dot(), soft-called builtin</span></td><td class="num"><span class="val">0.12 &micro;s</span> <span class="spread"><span class="bar"><i style="width:0%"></i></span>0%</span></td><td class="num"><span class="val">0.12 &micro;s</span> <span class="spread"><span class="bar"><i style="width:32%"></i></span>8%</span></td></tr>
 <tr><td><details><summary><span class="id">calls.hard_vs_user_ratio</span><span class="desc">user proc cost divided by hard builtin cost</span></summary><pre class="code">	(sd &gt; h1) ? 1 : 0, 1,
 	"Dot() [round(sd,0.001)] us vs abs() [round(h1,0.001)] us, user proc [round(u1,0.001)] us")
 
 Derived("calls.hard_vs_user_ratio", "calls", "user proc cost divided by hard builtin cost",
-	round(u1 / max(h1, 0.001), 0.01), "x", "calls.user_1arg / calls.builtin_abs")</pre><p class="srcnote">src/perf_calls_deep.dm</p></details></td><td class="num"><span class="val">7.82 x</span> <span class="spread"><span class="bar"><i style="width:16%"></i></span>4%</span></td><td class="num"><span class="val">7.98 x</span> <span class="spread"><span class="bar"><i style="width:12%"></i></span>3%</span></td></tr>
+	round(u1 / max(h1, 0.001), 0.01), "x", "calls.user_1arg / calls.builtin_abs")</pre><p class="srcnote">src/perf_calls_deep.dm</p></details></td><td class="num"><span class="val">7.84 x</span> <span class="spread"><span class="bar"><i style="width:8%"></i></span>2%</span></td><td class="num"><span class="val">7.97 x</span> <span class="spread"><span class="bar"><i style="width:12%"></i></span>3%</span></td></tr>
 <tr class="grouphead"><td colspan="3">profiler</td></tr>
 <tr><td><details><summary><span class="id">profiler.call_cost_off</span><span class="desc">user proc call, profiler off</span></summary><pre class="code">	for(var/i = 1 to reps)
 		UserNoop1(i)
@@ -2110,7 +2133,7 @@ ProfPass(reps)
 		UserNoop1(i)
 	return world.tick_usage - t0
 
-	MeasureTU("profiler.call_cost_on", "profiler", "user proc call, profiler on", dt_on, R, 0, null)</pre></details></details></td><td class="num"><span class="val">2.7 &micro;s</span> <span class="spread"><span class="bar"><i style="width:4%"></i></span>1%</span></td><td class="num"><span class="val">2.7 &micro;s</span> <span class="spread"><span class="bar"><i style="width:4%"></i></span>1%</span></td></tr>
+	MeasureTU("profiler.call_cost_on", "profiler", "user proc call, profiler on", dt_on, R, 0, null)</pre></details></details></td><td class="num"><span class="val">2.67 &micro;s</span> <span class="spread"><span class="bar"><i style="width:0%"></i></span>0%</span></td><td class="num"><span class="val">2.71 &micro;s</span> <span class="spread"><span class="bar"><i style="width:0%"></i></span>0%</span></td></tr>
 <tr><td><details><summary><span class="id">profiler.call_cost_after</span><span class="desc">user proc call, profiler stopped again</span></summary><pre class="code">	var/dt_after = Median3(ProfPass(R), ProfPass(R), ProfPass(R))
 
 ProfPass(reps)
@@ -2125,7 +2148,7 @@ ProfPass(reps)
 
 	MeasureTU("profiler.call_cost_after", "profiler", "user proc call, profiler stopped again", dt_after, R, 0, null)</pre></details></details></td><td class="num"><span class="val">0.24 &micro;s</span> <span class="spread"><span class="bar"><i style="width:0%"></i></span>0%</span></td><td class="num"><span class="val">0.24 &micro;s</span> <span class="spread"><span class="bar"><i style="width:0%"></i></span>0%</span></td></tr>
 <tr><td><details><summary><span class="id">profiler.overhead_multiple</span><span class="desc">profiled cost divided by unprofiled</span></summary><pre class="code">Derived("profiler.overhead_multiple", "profiler", "profiled cost divided by unprofiled",
-	round(on / max(off, 0.001), 0.01), "x", "profiler.call_cost_on / profiler.call_cost_off")</pre><p class="srcnote">src/perf_calls_deep.dm</p></details></td><td class="num"><span class="val">11.1 x</span> <span class="spread"><span class="bar"><i style="width:4%"></i></span>1%</span></td><td class="num"><span class="val">11.3 x</span> <span class="spread"><span class="bar"><i style="width:8%"></i></span>2%</span></td></tr>
+	round(on / max(off, 0.001), 0.01), "x", "profiler.call_cost_on / profiler.call_cost_off")</pre><p class="srcnote">src/perf_calls_deep.dm</p></details></td><td class="num"><span class="val">11.2 x</span> <span class="spread"><span class="bar"><i style="width:4%"></i></span>1%</span></td><td class="num"><span class="val">11.4 x</span> <span class="spread"><span class="bar"><i style="width:0%"></i></span>0%</span></td></tr>
 <tr><td><details><summary><span class="id">profiler.columns</span><span class="desc">column names</span></summary><pre class="code">	(islist(prof) &amp;&amp; prof.len &gt; 6) ? 1 : 0, 1,
 	"[islist(prof) ? "[prof.len] entries" : "not a list"]")
 if(islist(prof) &amp;&amp; prof.len &gt;= 6)
@@ -2146,12 +2169,12 @@ var/a_cheap = MeasureTU("xcheck.timer_cheap", "xcheck", "XV_Cheap, an empty proc
 	XV_Medium()</pre><details class="inner"><summary class="srcnote">as measured, verbatim harness code (src/perf_calls_deep.dm)</summary><pre class="code">var/t1 = world.tick_usage
 for(var/i = 1 to R_med)
 	XV_Medium()
-var/a_med = MeasureTU("xcheck.timer_medium", "xcheck", "XV_Medium by this framework", world.tick_usage - t1, R_med, 0, null)</pre></details></details></td><td class="num"><span class="val">0.28 &micro;s</span> <span class="spread"><span class="bar"><i style="width:0%"></i></span>0%</span></td><td class="num"><span class="val">0.28 &micro;s</span> <span class="spread"><span class="bar"><i style="width:0%"></i></span>0%</span></td></tr>
+var/a_med = MeasureTU("xcheck.timer_medium", "xcheck", "XV_Medium by this framework", world.tick_usage - t1, R_med, 0, null)</pre></details></details></td><td class="num"><span class="val">0.28 &micro;s</span> <span class="spread"><span class="bar"><i style="width:16%"></i></span>4%</span></td><td class="num"><span class="val">0.28 &micro;s</span> <span class="spread"><span class="bar"><i style="width:16%"></i></span>4%</span></td></tr>
 <tr><td><details><summary><span class="id">xcheck.timer_heavy</span><span class="desc">XV_Heavy by this framework</span></summary><pre class="code">for(var/i = 1 to R_heavy)
 	XV_Heavy()</pre><details class="inner"><summary class="srcnote">as measured, verbatim harness code (src/perf_calls_deep.dm)</summary><pre class="code">var/t2 = world.tick_usage
 for(var/i = 1 to R_heavy)
 	XV_Heavy()
-var/a_heavy = MeasureTU("xcheck.timer_heavy", "xcheck", "XV_Heavy by this framework", world.tick_usage - t2, R_heavy, 0, null)</pre></details></details></td><td class="num"><span class="val">0.77 &micro;s</span> <span class="spread"><span class="bar"><i style="width:4%"></i></span>1%</span></td><td class="num"><span class="val">0.76 &micro;s</span> <span class="spread"><span class="bar"><i style="width:4%"></i></span>1%</span></td></tr>
+var/a_heavy = MeasureTU("xcheck.timer_heavy", "xcheck", "XV_Heavy by this framework", world.tick_usage - t2, R_heavy, 0, null)</pre></details></details></td><td class="num"><span class="val">0.76 &micro;s</span> <span class="spread"><span class="bar"><i style="width:4%"></i></span>1%</span></td><td class="num"><span class="val">0.76 &micro;s</span> <span class="spread"><span class="bar"><i style="width:0%"></i></span>0%</span></td></tr>
 <tr><td><details><summary><span class="id">xcheck.profiler_cheap</span><span class="desc">XV_Cheap self time</span></summary><pre class="code">world.Profile(PROFILE_RESTART)
 for(var/i = 1 to R_cheap)
 	XV_Cheap()
@@ -2180,7 +2203,7 @@ var/p_cheap = ProfSelf(prof, "XV_Cheap")
 var/p_med = ProfSelf(prof, "XV_Medium")
 var/p_heavy = ProfSelf(prof, "XV_Heavy")
 
-Extern("xcheck.profiler_cheap", "xcheck", "XV_Cheap self time", p_cheap, "s-total", "world.Profile()", "call count [R_cheap]")</pre></details></details></td><td class="num"><span class="val">8.01 s-total</span> <span class="spread"><span class="bar"><i style="width:0%"></i></span>0%</span></td><td class="num"><span class="val">8.08 s-total</span> <span class="spread"><span class="bar"><i style="width:4%"></i></span>1%</span></td></tr>
+Extern("xcheck.profiler_cheap", "xcheck", "XV_Cheap self time", p_cheap, "s-total", "world.Profile()", "call count [R_cheap]")</pre></details></details></td><td class="num"><span class="val">8.01 s-total</span> <span class="spread"><span class="bar"><i style="width:4%"></i></span>1%</span></td><td class="num"><span class="val">8.11 s-total</span> <span class="spread"><span class="bar"><i style="width:0%"></i></span>0%</span></td></tr>
 <tr><td><details><summary><span class="id">xcheck.profiler_medium</span><span class="desc">XV_Medium self time</span></summary><pre class="code">	var/p_med = ProfSelf(prof, "XV_Medium")
 
 ProfSelf(list/prof, pname)
@@ -2195,7 +2218,7 @@ ProfSelf(list/prof, pname)
 		if(findtext("[prof[i]]", pname))
 			return prof[i+1]
 
-	Extern("xcheck.profiler_medium", "xcheck", "XV_Medium self time", p_med, "s-total", "world.Profile()", "call count [R_med]")</pre></details></details></td><td class="num"><span class="val">7.91 s-total</span> <span class="spread"><span class="bar"><i style="width:8%"></i></span>2%</span></td><td class="num"><span class="val">7.91 s-total</span> <span class="spread"><span class="bar"><i style="width:4%"></i></span>1%</span></td></tr>
+	Extern("xcheck.profiler_medium", "xcheck", "XV_Medium self time", p_med, "s-total", "world.Profile()", "call count [R_med]")</pre></details></details></td><td class="num"><span class="val">7.88 s-total</span> <span class="spread"><span class="bar"><i style="width:0%"></i></span>0%</span></td><td class="num"><span class="val">7.93 s-total</span> <span class="spread"><span class="bar"><i style="width:4%"></i></span>1%</span></td></tr>
 <tr><td><details><summary><span class="id">xcheck.profiler_heavy</span><span class="desc">XV_Heavy self time</span></summary><pre class="code">	var/p_heavy = ProfSelf(prof, "XV_Heavy")
 
 ProfSelf(list/prof, pname)
@@ -2210,7 +2233,7 @@ ProfSelf(list/prof, pname)
 		if(findtext("[prof[i]]", pname))
 			return prof[i+1]
 
-	Extern("xcheck.profiler_heavy", "xcheck", "XV_Heavy self time", p_heavy, "s-total", "world.Profile()", "call count [R_heavy]")</pre></details></details></td><td class="num"><span class="val">2.91 s-total</span> <span class="spread"><span class="bar"><i style="width:0%"></i></span>0%</span></td><td class="num"><span class="val">2.88 s-total</span> <span class="spread"><span class="bar"><i style="width:8%"></i></span>2%</span></td></tr>
+	Extern("xcheck.profiler_heavy", "xcheck", "XV_Heavy self time", p_heavy, "s-total", "world.Profile()", "call count [R_heavy]")</pre></details></details></td><td class="num"><span class="val">2.88 s-total</span> <span class="spread"><span class="bar"><i style="width:4%"></i></span>1%</span></td><td class="num"><span class="val">2.89 s-total</span> <span class="spread"><span class="bar"><i style="width:4%"></i></span>1%</span></td></tr>
 <tr><td><details><summary><span class="id">xcheck.ratio_timer</span><span class="desc">heavy/medium work by this framework</span></summary><pre class="code">	((a_cheap &lt; a_med &amp;&amp; a_med &lt; a_heavy) &amp;&amp; (pc &lt; pm &amp;&amp; pm &lt; ph)) ? 1 : 0, 1,
 	"timer [round(a_cheap,0.001)]/[round(a_med,0.001)]/[round(a_heavy,0.001)] us, profiler per call [round(pc,0.000001)]/[round(pm,0.000001)]/[round(ph,0.000001)]")
 
@@ -2227,9 +2250,9 @@ if(net_med &gt; 0 &amp;&amp; pnet_med &gt; 0)
 	var/ratio_timer = net_heavy / net_med
 	var/ratio_prof = pnet_heavy / pnet_med
 	Derived("xcheck.ratio_timer", "xcheck", "heavy/medium work by this framework", round(ratio_timer, 0.01), "x",
-		"(timer_heavy - timer_cheap) / (timer_medium - timer_cheap)")</pre><p class="srcnote">src/perf_calls_deep.dm</p></details></td><td class="num"><span class="val">7.76 x</span> <span class="spread"><span class="bar"><i style="width:20%"></i></span>5%</span></td><td class="num"><span class="val">8.02 x</span> <span class="spread"><span class="bar"><i style="width:4%"></i></span>1%</span></td></tr>
+		"(timer_heavy - timer_cheap) / (timer_medium - timer_cheap)")</pre><p class="srcnote">src/perf_calls_deep.dm</p></details></td><td class="num"><span class="val">7.69 x</span> <span class="spread"><span class="bar"><i style="width:40%"></i></span>10%</span></td><td class="num"><span class="val">8.12 x</span> <span class="spread"><span class="bar"><i style="width:16%"></i></span>4%</span></td></tr>
 <tr><td><details><summary><span class="id">xcheck.ratio_profiler</span><span class="desc">heavy/medium work by world.Profile</span></summary><pre class="code">Derived("xcheck.ratio_profiler", "xcheck", "heavy/medium work by world.Profile", round(ratio_prof, 0.01), "x",
-	"profiler self times per call, cheap subtracted")</pre><p class="srcnote">src/perf_calls_deep.dm</p></details></td><td class="num"><span class="val">8.39 x</span> <span class="spread"><span class="bar"><i style="width:64%"></i></span>16%</span></td><td class="num"><span class="val">8.79 x</span> <span class="spread"><span class="bar"><i style="width:16%"></i></span>4%</span></td></tr>
+	"profiler self times per call, cheap subtracted")</pre><p class="srcnote">src/perf_calls_deep.dm</p></details></td><td class="num"><span class="val">8.64 x</span> <span class="spread"><span class="bar"><i style="width:40%"></i></span>10%</span></td><td class="num"><span class="val">9.3 x</span> <span class="spread"><span class="bar"><i style="width:40%"></i></span>10%</span></td></tr>
 <tr class="grouphead"><td colspan="3">del &middot; own process, three runs merged per build</td></tr>
 <tr><td><details><summary><span class="id">framework.empty_loop</span><span class="desc">empty loop iteration</span></summary><pre class="code">// Median of three, not one.
 //
@@ -2292,13 +2315,13 @@ Measure("framework.bare_loop", "framework", "loop iteration, no accumulator", bd
 	// measured rather than between one measurement and a remembered figure.
 	MeasureTU("del.drop_control_1ref", "del",
 		"allocate, build 1 heap ref, drop both, no del()",
-		o[3], 60000, 0, "the control arm every del row subtracts")</pre><p class="srcnote">src/del_isolated.dm</p></details></td><td class="num"><span class="val">1.04 &micro;s</span> <span class="spread"><span class="bar"><i style="width:8%"></i></span>2%</span></td><td class="num"><span class="val">1.03 &micro;s</span> <span class="spread"><span class="bar"><i style="width:8%"></i></span>2%</span></td></tr>
+		o[3], 60000, 0, "the control arm every del row subtracts")</pre><p class="srcnote">src/del_isolated.dm</p></details></td><td class="num"><span class="val">1.04 &micro;s</span> <span class="spread"><span class="bar"><i style="width:52%"></i></span>13%</span></td><td class="num"><span class="val">1.04 &micro;s</span> <span class="spread"><span class="bar"><i style="width:8%"></i></span>2%</span></td></tr>
 <tr><td><details><summary><span class="id">del.refs_0</span><span class="desc">del cost, 0 heap refs</span></summary><pre class="code">	(many &lt;= one * 3) ? 1 : 0, 1,
 	"1 ref [round(one,0.01)] us, 256 refs [round(many,0.01)] us")
 
 MeasureDelta("del.refs_0", "del", "del cost, 0 heap refs", z[2], z[3], 60000, null)</pre><p class="srcnote">src/del_isolated.dm</p></details></td><td class="num"><span class="withheld">withheld</span> <span class="flag">LOW_RESOLUTION</span></td><td class="num"><span class="withheld">withheld</span> <span class="flag">LOW_RESOLUTION</span></td></tr>
-<tr><td><details><summary><span class="id">del.refs_1</span><span class="desc">del cost, 1 heap ref</span></summary><pre class="code">MeasureDelta("del.refs_1", "del", "del cost, 1 heap ref", o[2], o[3], 60000, null)</pre><p class="srcnote">src/del_isolated.dm</p></details></td><td class="num"><span class="val">3.68 &micro;s</span> <span class="spread"><span class="bar"><i style="width:12%"></i></span>3%</span></td><td class="num"><span class="val">3.97 &micro;s</span> <span class="spread"><span class="bar"><i style="width:12%"></i></span>3%</span></td></tr>
-<tr><td><details><summary><span class="id">del.refs_256</span><span class="desc">del cost, 256 heap refs</span></summary><pre class="code">MeasureDelta("del.refs_256", "del", "del cost, 256 heap refs", m[2], m[3], 20000, null)</pre><p class="srcnote">src/del_isolated.dm</p></details></td><td class="num"><span class="val">5.7 &micro;s</span> <span class="spread"><span class="bar"><i style="width:12%"></i></span>3%</span></td><td class="num"><span class="val">5.94 &micro;s</span> <span class="spread"><span class="bar"><i style="width:12%"></i></span>3%</span></td></tr>
+<tr><td><details><summary><span class="id">del.refs_1</span><span class="desc">del cost, 1 heap ref</span></summary><pre class="code">MeasureDelta("del.refs_1", "del", "del cost, 1 heap ref", o[2], o[3], 60000, null)</pre><p class="srcnote">src/del_isolated.dm</p></details></td><td class="num"><span class="val">3.68 &micro;s</span> <span class="spread"><span class="bar"><i style="width:4%"></i></span>1%</span></td><td class="num"><span class="val">4 &micro;s</span> <span class="spread"><span class="bar"><i style="width:8%"></i></span>2%</span></td></tr>
+<tr><td><details><summary><span class="id">del.refs_256</span><span class="desc">del cost, 256 heap refs</span></summary><pre class="code">MeasureDelta("del.refs_256", "del", "del cost, 256 heap refs", m[2], m[3], 20000, null)</pre><p class="srcnote">src/del_isolated.dm</p></details></td><td class="num"><span class="val">5.71 &micro;s</span> <span class="spread"><span class="bar"><i style="width:24%"></i></span>6%</span></td><td class="num"><span class="val">5.91 &micro;s</span> <span class="spread"><span class="bar"><i style="width:0%"></i></span>0%</span></td></tr>
 <tr><td><details><summary><span class="id">del.ref_via_index</span><span class="desc">del cost, sole ref indexed by the del expression</span></summary><pre class="code">	var/ihi = DelIndexArm(60000)
 
 DelIndexArm(reps)
@@ -2316,7 +2339,7 @@ DelIndexArm(reps)
 		del(H[1])
 	return world.tick_usage - tu0
 
-	MeasureDelta("del.ref_via_index", "del", "del cost, sole ref indexed by the del expression", ihi, ilo, 60000, null)</pre></details></details></td><td class="num"><span class="val">0.24 &micro;s</span> <span class="spread"><span class="bar"><i style="width:16%"></i></span>4%</span></td><td class="num"><span class="val">0.25 &micro;s</span> <span class="spread"><span class="bar"><i style="width:100%"></i></span>52%</span></td></tr>
+	MeasureDelta("del.ref_via_index", "del", "del cost, sole ref indexed by the del expression", ihi, ilo, 60000, null)</pre></details></details></td><td class="num"><span class="val">0.25 &micro;s</span> <span class="spread"><span class="bar"><i style="width:16%"></i></span>4%</span></td><td class="num"><span class="val">0.24 &micro;s</span> <span class="spread"><span class="bar"><i style="width:84%"></i></span>21%</span></td></tr>
 <tr><td><details><summary><span class="id">del.turfs_10k</span><span class="desc">del cost at 10k turfs</span></summary><pre class="code">// --- turfs are not counted ---
 var/list/sm = DelNet(40000, 1)
 var/small = sm[1]
@@ -2325,20 +2348,20 @@ world.maxy = 220
 sleep(2)
 var/list/bg = DelNet(40000, 1)
 var/big = bg[1]
-MeasureDelta("del.turfs_10k", "del", "del cost at 10k turfs", sm[2], sm[3], 40000, null)</pre><p class="srcnote">src/del_isolated.dm</p></details></td><td class="num"><span class="val">3.68 &micro;s</span> <span class="spread"><span class="bar"><i style="width:8%"></i></span>2%</span></td><td class="num"><span class="val">3.98 &micro;s</span> <span class="spread"><span class="bar"><i style="width:4%"></i></span>1%</span></td></tr>
-<tr><td><details><summary><span class="id">del.turfs_48k</span><span class="desc">del cost at 48k turfs</span></summary><pre class="code">MeasureDelta("del.turfs_48k", "del", "del cost at 48k turfs", bg[2], bg[3], 40000, null)</pre><p class="srcnote">src/del_isolated.dm</p></details></td><td class="num"><span class="val">3.71 &micro;s</span> <span class="spread"><span class="bar"><i style="width:4%"></i></span>1%</span></td><td class="num"><span class="val">3.98 &micro;s</span> <span class="spread"><span class="bar"><i style="width:4%"></i></span>1%</span></td></tr>
+MeasureDelta("del.turfs_10k", "del", "del cost at 10k turfs", sm[2], sm[3], 40000, null)</pre><p class="srcnote">src/del_isolated.dm</p></details></td><td class="num"><span class="val">3.68 &micro;s</span> <span class="spread"><span class="bar"><i style="width:4%"></i></span>1%</span></td><td class="num"><span class="val">4 &micro;s</span> <span class="spread"><span class="bar"><i style="width:8%"></i></span>2%</span></td></tr>
+<tr><td><details><summary><span class="id">del.turfs_48k</span><span class="desc">del cost at 48k turfs</span></summary><pre class="code">MeasureDelta("del.turfs_48k", "del", "del cost at 48k turfs", bg[2], bg[3], 40000, null)</pre><p class="srcnote">src/del_isolated.dm</p></details></td><td class="num"><span class="val">3.72 &micro;s</span> <span class="spread"><span class="bar"><i style="width:4%"></i></span>1%</span></td><td class="num"><span class="val">4.02 &micro;s</span> <span class="spread"><span class="bar"><i style="width:12%"></i></span>3%</span></td></tr>
 <tr><td><details><summary><span class="id">del.before_churn</span><span class="desc">del cost before 500k churn</span></summary><pre class="code">// --- cumulative allocation does not matter ---
 var/list/bc = DelNet(40000, 1)
 var/before_churn = bc[1]
 Churn(500000)
 var/list/ac = DelNet(40000, 1)
 var/after_churn = ac[1]
-MeasureDelta("del.before_churn", "del", "del cost before 500k churn", bc[2], bc[3], 40000, null)</pre><p class="srcnote">src/del_isolated.dm</p></details></td><td class="num"><span class="val">3.72 &micro;s</span> <span class="spread"><span class="bar"><i style="width:4%"></i></span>1%</span></td><td class="num"><span class="val">4.01 &micro;s</span> <span class="spread"><span class="bar"><i style="width:4%"></i></span>1%</span></td></tr>
-<tr><td><details><summary><span class="id">del.after_churn</span><span class="desc">del cost after 500k churn</span></summary><pre class="code">MeasureDelta("del.after_churn", "del", "del cost after 500k churn", ac[2], ac[3], 40000, null)</pre><p class="srcnote">src/del_isolated.dm</p></details></td><td class="num"><span class="val">3.69 &micro;s</span> <span class="spread"><span class="bar"><i style="width:8%"></i></span>2%</span></td><td class="num"><span class="val">3.96 &micro;s</span> <span class="spread"><span class="bar"><i style="width:4%"></i></span>1%</span></td></tr>
+MeasureDelta("del.before_churn", "del", "del cost before 500k churn", bc[2], bc[3], 40000, null)</pre><p class="srcnote">src/del_isolated.dm</p></details></td><td class="num"><span class="val">3.75 &micro;s</span> <span class="spread"><span class="bar"><i style="width:4%"></i></span>1%</span></td><td class="num"><span class="val">4.04 &micro;s</span> <span class="spread"><span class="bar"><i style="width:8%"></i></span>2%</span></td></tr>
+<tr><td><details><summary><span class="id">del.after_churn</span><span class="desc">del cost after 500k churn</span></summary><pre class="code">MeasureDelta("del.after_churn", "del", "del cost after 500k churn", ac[2], ac[3], 40000, null)</pre><p class="srcnote">src/del_isolated.dm</p></details></td><td class="num"><span class="val">3.69 &micro;s</span> <span class="spread"><span class="bar"><i style="width:4%"></i></span>1%</span></td><td class="num"><span class="val">3.99 &micro;s</span> <span class="spread"><span class="bar"><i style="width:12%"></i></span>3%</span></td></tr>
 <tr><td><details><summary><span class="id">del.live_0</span><span class="desc">del cost at 0 live objs</span></summary><pre class="code">// --- live population is what drives it ---
 var/list/cd = DelNet(40000, 1)
 var/cold = cd[1]
-MeasureDelta("del.live_0", "del", "del cost at 0 live objs", cd[2], cd[3], 40000, null)</pre><p class="srcnote">src/del_isolated.dm</p></details></td><td class="num"><span class="val">3.7 &micro;s</span> <span class="spread"><span class="bar"><i style="width:0%"></i></span>0%</span></td><td class="num"><span class="val">4.02 &micro;s</span> <span class="spread"><span class="bar"><i style="width:8%"></i></span>2%</span></td></tr>
+MeasureDelta("del.live_0", "del", "del cost at 0 live objs", cd[2], cd[3], 40000, null)</pre><p class="srcnote">src/del_isolated.dm</p></details></td><td class="num"><span class="val">3.71 &micro;s</span> <span class="spread"><span class="bar"><i style="width:4%"></i></span>1%</span></td><td class="num"><span class="val">4.02 &micro;s</span> <span class="spread"><span class="bar"><i style="width:8%"></i></span>2%</span></td></tr>
 <tr><td><details><summary><span class="id">del.live_50000</span><span class="desc">del cost at 50000 live objs</span></summary><pre class="code">var/list/live_us = list()
 for(var/target in list(50000, 100000, 200000, 300000))
 	while(DEL_BALLAST.len &lt; target)
@@ -2361,7 +2384,7 @@ for(var/target in list(50000, 100000, 200000, 300000))
 	var/list/lv = DelNet(reps, 1)
 	var/cost = lv[1]
 	live_us["[target]"] = cost
-	MeasureDelta("del.live_[target]", "del", "del cost at [target] live objs", lv[2], lv[3], reps, null)</pre></details></details></td><td class="num"><span class="val">85.8 &micro;s</span> <span class="spread"><span class="bar"><i style="width:4%"></i></span>1%</span></td><td class="num"><span class="val">88.3 &micro;s</span> <span class="spread"><span class="bar"><i style="width:16%"></i></span>4%</span></td></tr>
+	MeasureDelta("del.live_[target]", "del", "del cost at [target] live objs", lv[2], lv[3], reps, null)</pre></details></details></td><td class="num"><span class="val">87.1 &micro;s</span> <span class="spread"><span class="bar"><i style="width:4%"></i></span>1%</span></td><td class="num"><span class="val">89.4 &micro;s</span> <span class="spread"><span class="bar"><i style="width:4%"></i></span>1%</span></td></tr>
 <tr><td><details><summary><span class="id">del.live_100000</span><span class="desc">del cost at 100000 live objs</span></summary><pre class="code">var/list/live_us = list()
 for(var/target in list(50000, 100000, 200000, 300000))
 	while(DEL_BALLAST.len &lt; target)
@@ -2384,7 +2407,7 @@ for(var/target in list(50000, 100000, 200000, 300000))
 	var/list/lv = DelNet(reps, 1)
 	var/cost = lv[1]
 	live_us["[target]"] = cost
-	MeasureDelta("del.live_[target]", "del", "del cost at [target] live objs", lv[2], lv[3], reps, null)</pre></details></details></td><td class="num"><span class="val">174.7 &micro;s</span> <span class="spread"><span class="bar"><i style="width:24%"></i></span>6%</span></td><td class="num"><span class="val">185.1 &micro;s</span> <span class="spread"><span class="bar"><i style="width:40%"></i></span>10%</span></td></tr>
+	MeasureDelta("del.live_[target]", "del", "del cost at [target] live objs", lv[2], lv[3], reps, null)</pre></details></details></td><td class="num"><span class="val">190.1 &micro;s</span> <span class="spread"><span class="bar"><i style="width:56%"></i></span>14%</span></td><td class="num"><span class="val">177.7 &micro;s</span> <span class="spread"><span class="bar"><i style="width:36%"></i></span>9%</span></td></tr>
 <tr><td><details><summary><span class="id">del.live_200000</span><span class="desc">del cost at 200000 live objs</span></summary><pre class="code">var/list/live_us = list()
 for(var/target in list(50000, 100000, 200000, 300000))
 	while(DEL_BALLAST.len &lt; target)
@@ -2407,7 +2430,7 @@ for(var/target in list(50000, 100000, 200000, 300000))
 	var/list/lv = DelNet(reps, 1)
 	var/cost = lv[1]
 	live_us["[target]"] = cost
-	MeasureDelta("del.live_[target]", "del", "del cost at [target] live objs", lv[2], lv[3], reps, null)</pre></details></details></td><td class="num"><span class="val">596 &micro;s</span> <span class="spread"><span class="bar"><i style="width:16%"></i></span>4%</span></td><td class="num"><span class="val">661.5 &micro;s</span> <span class="spread"><span class="bar"><i style="width:8%"></i></span>2%</span></td></tr>
+	MeasureDelta("del.live_[target]", "del", "del cost at [target] live objs", lv[2], lv[3], reps, null)</pre></details></details></td><td class="num"><span class="val">609.8 &micro;s</span> <span class="spread"><span class="bar"><i style="width:12%"></i></span>3%</span></td><td class="num"><span class="val">670.3 &micro;s</span> <span class="spread"><span class="bar"><i style="width:4%"></i></span>1%</span></td></tr>
 <tr><td><details><summary><span class="id">del.live_300000</span><span class="desc">del cost at 300000 live objs</span></summary><pre class="code">var/list/live_us = list()
 for(var/target in list(50000, 100000, 200000, 300000))
 	while(DEL_BALLAST.len &lt; target)
@@ -2430,24 +2453,24 @@ for(var/target in list(50000, 100000, 200000, 300000))
 	var/list/lv = DelNet(reps, 1)
 	var/cost = lv[1]
 	live_us["[target]"] = cost
-	MeasureDelta("del.live_[target]", "del", "del cost at [target] live objs", lv[2], lv[3], reps, null)</pre></details></details></td><td class="num"><span class="val">1082.6 &micro;s</span> <span class="spread"><span class="bar"><i style="width:8%"></i></span>2%</span></td><td class="num"><span class="val">1154.4 &micro;s</span> <span class="spread"><span class="bar"><i style="width:4%"></i></span>1%</span></td></tr>
+	MeasureDelta("del.live_[target]", "del", "del cost at [target] live objs", lv[2], lv[3], reps, null)</pre></details></details></td><td class="num"><span class="val">1104.3 &micro;s</span> <span class="spread"><span class="bar"><i style="width:20%"></i></span>5%</span></td><td class="num"><span class="val">1154.2 &micro;s</span> <span class="spread"><span class="bar"><i style="width:4%"></i></span>1%</span></td></tr>
 <tr><td><details><summary><span class="id">del.residual_after_peak</span><span class="desc">del cost after peak population freed</span></summary><pre class="code">	(after_free &gt; cold * 3) ? 1 : 0, 1,
 	"[round(cold,0.01)] us cold, [round(after_free,0.01)] us after 300k existed and were freed")
-MeasureDelta("del.residual_after_peak", "del", "del cost after peak population freed", af[2], af[3], 20000, null)</pre><p class="srcnote">src/del_isolated.dm</p></details></td><td class="num"><span class="val">199.5 &micro;s</span> <span class="spread"><span class="bar"><i style="width:4%"></i></span>1%</span></td><td class="num"><span class="val">198.8 &micro;s</span> <span class="spread"><span class="bar"><i style="width:0%"></i></span>0%</span></td></tr>
+MeasureDelta("del.residual_after_peak", "del", "del cost after peak population freed", af[2], af[3], 20000, null)</pre><p class="srcnote">src/del_isolated.dm</p></details></td><td class="num"><span class="val">200.7 &micro;s</span> <span class="spread"><span class="bar"><i style="width:0%"></i></span>0%</span></td><td class="num"><span class="val">198.7 &micro;s</span> <span class="spread"><span class="bar"><i style="width:0%"></i></span>0%</span></td></tr>
 </tbody></table></div>
 </section>
 <section id="platform">
 <h2>Where the operating system changes the answer</h2>
-<p class="sub">The whole suite also runs on a Windows desktop, and every assertion carries the same verdict on both machines: engine <em>behaviour</em> does not depend on the operating system as far as this suite can see. Cost mostly does not either. Across 76 rows measured on both the median difference is 1.02x, the sort of gap any two machines show, so <strong>the tables above are not split by platform</strong>. What follows is the short list of rows where the platform genuinely changes the number, at 2x or more.</p>
+<p class="sub">The whole suite also runs on a Windows desktop, and every assertion carries the same verdict on both machines: engine <em>behaviour</em> does not depend on the operating system as far as this suite can see. Cost mostly does not either. Across 79 rows measured on both the median difference is 1.05x, the sort of gap any two machines show, so <strong>the tables above are not split by platform</strong>. What follows is the short list of rows where the platform genuinely changes the number, at 2x or more.</p>
 <p class="sub">Two things are deliberately absent. Rows too small for either machine to resolve are excluded, because a ratio between two figures inside the error bar is arithmetic rather than a measurement. So is <code>del()</code>, even though both machines measure it: its rows are one memory-bound scan sampled at several populations, and the slope of that scan has already been measured here to be a property of a machine's memory subsystem rather than of its operating system. Listing it would dress a machine difference as a platform one.</p>
 <div class="scroll"><table>
 <thead><tr><th>measurement</th><th class="num">linux</th><th class="num">windows</th><th class="num">difference</th></tr></thead><tbody>
-<tr><td><span class="mono">io.file_write_short</span> file &lt;&lt; 10-char line</td><td class="num">8.56 &micro;s</td><td class="num">204.5 &micro;s</td><td class="num">23.9x dearer on windows</td></tr>
-<tr><td><span class="mono">io.file_write_long</span> file &lt;&lt; 1000-char line</td><td class="num">10 &micro;s</td><td class="num">235.7 &micro;s</td><td class="num">23.6x dearer on windows</td></tr>
-<tr><td><span class="mono">io.file_write_interpolated</span> file &lt;&lt; line with one embedded value</td><td class="num">9.27 &micro;s</td><td class="num">216.9 &micro;s</td><td class="num">23.4x dearer on windows</td></tr>
-<tr><td><span class="mono">strings.findtext</span> findtext, 43-char haystack</td><td class="num">0.38 &micro;s</td><td class="num">2.7 &micro;s</td><td class="num">7.1x dearer on windows</td></tr>
-<tr><td><span class="mono">io.world_log_short</span> world.log &lt;&lt; 10-char line</td><td class="num">1.95 &micro;s</td><td class="num">4.41 &micro;s</td><td class="num">2.3x dearer on windows</td></tr>
-<tr><td><span class="mono">profiler.call_cost_on</span> user proc call, profiler on</td><td class="num">2.7 &micro;s</td><td class="num">0.85 &micro;s</td><td class="num">3.2x cheaper on windows</td></tr>
+<tr><td><span class="mono">io.file_write_short</span> file &lt;&lt; 10-char line</td><td class="num">8.41 &micro;s</td><td class="num">202.3 &micro;s</td><td class="num">24.1x dearer on windows</td></tr>
+<tr><td><span class="mono">io.file_write_long</span> file &lt;&lt; 1000-char line</td><td class="num">9.91 &micro;s</td><td class="num">219.6 &micro;s</td><td class="num">22.2x dearer on windows</td></tr>
+<tr><td><span class="mono">io.file_write_interpolated</span> file &lt;&lt; line with one embedded value</td><td class="num">9.13 &micro;s</td><td class="num">200.7 &micro;s</td><td class="num">22x dearer on windows</td></tr>
+<tr><td><span class="mono">strings.findtext</span> findtext, 43-char haystack</td><td class="num">0.38 &micro;s</td><td class="num">2.49 &micro;s</td><td class="num">6.6x dearer on windows</td></tr>
+<tr><td><span class="mono">io.world_log_short</span> world.log &lt;&lt; 10-char line</td><td class="num">1.92 &micro;s</td><td class="num">4.07 &micro;s</td><td class="num">2.1x dearer on windows</td></tr>
+<tr><td><span class="mono">profiler.call_cost_on</span> user proc call, profiler on</td><td class="num">2.67 &micro;s</td><td class="num">0.81 &micro;s</td><td class="num">3.3x cheaper on windows</td></tr>
 </tbody></table>
 <caption>Computed from the two baselines when this page was generated, both timed on the same clock, one machine per column. These are absolute times from different machines and do not transfer; what transfers is that the gap exists and roughly how large it is.</caption></div>
 <p class="sub"><strong>What this means for advice.</strong> Rules built on compute survive the crossing unchanged. Rules built on the io layer do not, and logging is the one to watch: preferring <code>world.log</code> over a direct file write is a large win on Windows and a much smaller one on Linux, because a file write is itself far cheaper there. On the measuring machine DreamDaemon's stdout is bound to a file, which is part of why its <code>world.log</code> figure reads as it does; the binding is recorded in the baseline rather than assumed, because it moves that row by about 20x. The rules table states both rather than picking one.</p>
@@ -2458,14 +2481,14 @@ MeasureDelta("del.residual_after_peak", "del", "del cost after peak population f
 <p class="sub">The ratios that survive measurement, stated as rules. Ratios hold across machines; the absolute times above do not. Every figure in this column is computed from the same baselines as the tables above, at generation time. A rule whose rows are missing or withheld in a baseline does not appear at all, which is why some advice you may have seen on this page before is gone: it rested on a harness that is not in the repository.</p>
 <div class="scroll"><table>
 <thead><tr><th>rule</th><th class="num">measured advantage</th></tr></thead><tbody>
-<tr><td>Iterate <code>for(var/mob/M in view())</code> instead of assigning view() to a list</td><td class="num">7.9x on 1666, 7.7x on 1685 at 667 atoms; 37.3x on 1666, 35.2x on 1685 with 1,200 more in view</td></tr>
-<tr><td>Re-query view() for a second pass instead of caching it</td><td class="num">1.6x on 1666, 1.6x on 1685</td></tr>
+<tr><td>Iterate <code>for(var/mob/M in view())</code> instead of assigning view() to a list</td><td class="num">7.8x on 1666, 7.8x on 1685 at 667 atoms; 37.2x on 1666, 35.5x on 1685 with 1,200 more in view</td></tr>
+<tr><td>Re-query view() for a second pass instead of caching it</td><td class="num">1.7x on 1666, 1.7x on 1685</td></tr>
 <tr><td>Use range() when line of sight is not needed</td><td class="num">1.9x on 1666, 1.9x on 1685</td></tr>
-<tr><td>Assign <code>loc</code> directly when Enter/Exit callbacks are not needed</td><td class="num">7.7x on 1666, 7.8x on 1685</td></tr>
-<tr><td>Use an associative list for lookups instead of <code>in</code>, at 5,000 entries</td><td class="num">50x on 1666, 50x on 1685</td></tr>
+<tr><td>Assign <code>loc</code> directly when Enter/Exit callbacks are not needed</td><td class="num">7.9x on 1666, 7.8x on 1685</td></tr>
+<tr><td>Use an associative list for lookups instead of <code>in</code>, at 5,000 entries</td><td class="num">49.6x on 1666, 50x on 1685</td></tr>
 <tr><td>Build lists with <code>+=</code> rather than .Add()</td><td class="num">1.5x on 1666, 1.5x on 1685</td></tr>
-<tr><td>Log with <code>world.log</code> rather than writing to a file per event</td><td class="num">4.4x on linux, 46.4x on windows &middot; platform-conditional, see above</td></tr>
-<tr><td>Drop the last reference and let refcounting collect, instead of calling del()</td><td class="num">del() costs 1,083 &micro;s on 1666 and 1,154 &micro;s on 1685 at 300,000 live objects</td></tr>
+<tr><td>Log with <code>world.log</code> rather than writing to a file per event</td><td class="num">4.4x on linux, 49.7x on windows &middot; platform-conditional, see above</td></tr>
+<tr><td>Drop the last reference and let refcounting collect, instead of calling del()</td><td class="num">del() costs 1,104 &micro;s on 1666 and 1,154 &micro;s on 1685 at 300,000 live objects</td></tr>
 <tr><td>Clear <code>contents</code> before nullspacing an atom</td><td class="num">prevents a permanent leak</td></tr>
 <tr><td>Never define a flag above bit 23</td><td class="num">masks past 2^24 are silently zero</td></tr>
 <tr><td>Keep every loop under 16,777,216 iterations</td><td class="num">loops past 2^24 never terminate</td></tr>
