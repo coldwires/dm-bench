@@ -80,7 +80,20 @@ the script itself has not been run end to end, unlike the PowerShell one.
 .\tools\run.ps1 -List                                  # discovered builds
 .\tools\run.ps1 -Suite suite_del -Version 516.1685
 .\tools\run.ps1 -Suite suite -Version all
+.\tools\run.ps1 -Suite suite_del -Define BREAKCHECK    # compile-time flag
 ```
+
+`-Define` passes `-D<name>` through to the compiler, and `--define` does the
+same in `run.sh`. Its first use is `BREAKCHECK`, which is compiled into both
+manifests and deliberately reintroduces the defects the sweep assertions exist
+to catch, so that an assertion can be seen failing rather than trusted.
+**Exercised end to end on 516.1666 on both operating systems**: `suite_del`
+built with `BREAKCHECK` reports 9 passed and 1 failed on each, and the failure
+is `del.population_sweep_monotonic`, the one that file's break block sabotages. A
+define changes what was compiled, so it is recorded as a measurement condition:
+the runner stamps `# defines` into the result, and `merge-runs.ps1` refuses a
+set whose runs disagree on it, or one where only some runs carry the stamp. A
+`BREAKCHECK` run therefore cannot reach a baseline by accident.
 
 Runs execute DreamDaemon at High process priority by default, which halves the
 between-run spread of long rows (see Precision); pass `-Priority Normal` to
@@ -237,8 +250,9 @@ it happens.
 Every other verdict agreeing across two builds and two operating systems is the
 other half of the result, and it is what makes the disagreement legible.
 
-Two rows in 118 exceed 25% spread on the measuring machine. On the desktop 19
-and 27 do, which is that machine rather than the suite.
+Two rows in 118 exceed 25% spread on the measuring machine's 516.1666 triple
+and none on its 516.1685 one. On the desktop the same two triples give 20 and
+4, which is that machine rather than the suite.
 
 **The measurement half earned its keep in the same cycle.** `L.Find()` is about
 **4x slower from 516.1674 onward**, per element rather than per call,
@@ -255,11 +269,12 @@ Those keep an accumulator because the compiler eliminates a discarded pure
 read outright, so a converted row would time an empty loop and publish a
 plausible near-zero with nothing flagged.
 
-Two rows in the del suite are withheld on the measuring machine rather than
+One row in the del suite is withheld on the measuring machine rather than
 published: the zero-reference case, which is below the resolution floor on
-every machine tried, and the 256-reference case, whose figure is a difference
-between two timed blocks that this machine deletes too quickly to separate
-from its own error. Both say so where they would otherwise appear.
+every machine tried. It says so where it would otherwise appear. The
+256-reference case was withheld alongside it in earlier printings and is now
+published, because it clears its subtraction guard in the current baselines;
+a row is withheld when its own data says so, not permanently.
 
 **Six of the assertions encode invariants rather than behaviour**: that the
 view() radius sweep rises at every step, that three rows timing the same
@@ -268,25 +283,35 @@ lookup does not, that a longer write is not cheaper than a shorter one, and
 that del() cost rises with population. They exist because a wrong divisor
 published two rows 1.83x high through every repeatability check the suite had.
 Each has been observed failing, via a compiled-out `BREAKCHECK` block that
-reintroduces the defect it guards against.
+reintroduces the defect it guards against, reached with
+`run.ps1 -Define BREAKCHECK`.
 
 ### Precision
 
 **The error bar belongs to the machine, not to the project**, and the two
-machines here differ by about 4x. Median run-to-run spread by measurement size,
-three runs of one build on each:
+machines here differ by about 10x. Median run-to-run spread by measurement
+size, from the merged 516.1666 triple on each:
 
 | value band | linux, dedicated | windows, in daily use |
 |---|---|---|
-| under 0.2 us | 0% | 12% |
-| 0.2 to 1 us | 3% | 9% |
-| 1 to 10 us | 3% | 8% |
-| over 10 us | 2% | 5% |
+| under 0.2 us | 0% | 11% |
+| 0.2 to 1 us | 0% | 9% |
+| 1 to 10 us | 1% | 7% |
+| over 10 us | 2% | 16% |
 
-Overall, one row in 92 exceeds 25% spread on the measuring machine against 24
+Overall, two rows in 118 exceed 25% spread on the measuring machine against 20
 on the desktop. **That gap is what "qualify the machine before publishing its
 numbers" is for**, and it is why the two are separate columns rather than an
 average.
+
+**The desktop's long rows are now its widest band, not its tightest**, which is
+a reversal from every earlier printing of this table and is the clock rather
+than the machine. Under the 0.1s wall clock a row running for seconds could not
+report a disagreement finer than its own quantum, so the long rows printed the
+tightest spreads in the suite. `world.tick_usage` can express that
+disagreement, and on a machine in daily use there is a great deal of it to
+express. The measuring machine's long rows did not move, because there was
+little there to reveal.
 
 Two cautions, both learned by getting them wrong here first.
 

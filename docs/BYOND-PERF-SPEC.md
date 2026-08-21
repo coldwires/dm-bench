@@ -10,8 +10,8 @@ Measured cost of common BYOND operations.
 - Every measured row outside the scheduler is timed with `world.tick_usage`, calibrated per run against a long wall-clock reference at 490 to 520 µs per percent of a tick, after establishing that it is linear to within 2.4% across a 500x range of workload.
 - Empty loop baseline: 0.08 µs with an accumulator, 0.03 without. The first is removed from accumulator-form rows, the second from the unrolled discarded-result rows.
 - Sections 1 to 11 and 13 to 14: no clients connected. Section 12: server on a remote Linux box, clients on a separate machine over the public internet.
-- **Every figure regenerates from three runs per build merged**, medians per row with the observed spread recorded: 52 assertions and 92 measurements for `suite.dme`, 10 and 16 for `suite_del.dme`, 0 failed and 0 unstable on both builds and both machines, and every assertion verdict identical across both builds and both operating systems.
-- **A row that fails a resolution guard is withheld rather than printed.** Two rows in section 2 are withheld on the measuring machine for exactly this reason and say so in place.
+- **Every figure regenerates from three runs per build merged**, medians per row with the observed spread recorded: 59 assertions and 118 measurements for `suite.dme`, 10 and 17 for `suite_del.dme`, and 0 unstable anywhere. **Every assertion carries the same verdict on both operating systems.** One differs across builds: `lists.find_costs_about_the_same_as_in` passes on 516.1666 and fails on 516.1685, on both machines, which is the `Find()` regression in §3 and is the suite working rather than a defect.
+- **A row that fails a resolution guard is withheld rather than printed.** One row in section 2 is withheld on the measuring machine for exactly this reason and says so in place. A second, the 256-reference arm, was withheld in earlier printings and is restored, because it clears its guard in the baselines this page is now derived from.
 - **Figures are printed at the precision the harness emits, which is finer than the measurement supports.** Repeatability is about 2% on the measuring machine, but that is not the same as accuracy: sub-microsecond rows subtract a calibrated baseline, and values are emitted at two decimals, so a row reading 0.12 cannot express a difference finer than about 8% whatever the machine does. **Do not read 0.12 against 0.13 as a difference.** Ratios between rows measured close together are sounder than absolutes, since the arms share machine conditions.
 - **A ratio only travels when both of its arms are bounded by the same resource.** Computation against computation transfers between machines; buffered logging against an unbuffered file write does not, and section 11b is what that looks like when measured on two operating systems.
 - Where two snippets are claimed equivalent, the harness asserts matching output counts and prints the result.
@@ -31,9 +31,12 @@ that happens.
 
 **Repeatability and precision, and the error bar is per machine.** Every
 baseline is three runs merged, median and spread per row. On the measuring
-machine the median row disagrees with itself by about **2%** between runs, one
-row in 92 exceeds 25%, and rows over 10 µs sit near 2%. On the desktop the same
-suite gives about 9%, with 24 rows over 25%. **Neither figure is an accuracy
+machine the median row disagrees with itself by about **1%** between runs, two
+rows in 118 exceed 25%, and rows over 10 µs sit near 2%. On the desktop the same
+suite gives about 10%, with 20 rows over 25% and its long rows the widest band
+rather than the tightest, at 16%. Those are the 516.1666 triples; the 516.1685
+pair is tighter on both machines, at 0 and 4 rows over 25%, which is the
+sitting rather than the build. **Neither figure is an accuracy
 claim**: it is how well a machine repeats itself, which is the most a
 repeatability measurement can tell you, and small rows remain limited by
 baseline subtraction and by two-decimal output whatever the machine does.
@@ -227,23 +230,24 @@ three runs per build.
 | Heap refs on victim | 516.1666 | 516.1685 |
 |---|---|---|
 | 0 | withheld, below the resolution floor | withheld |
-| 1 | 3.68 (3.63 to 3.70) µs | 4.03 (3.98 to 4.07) µs |
-| 256 | withheld, subtraction noise | withheld |
+| 1 | 3.68 (3.68 to 3.70) µs | 4.00 (3.94 to 4.01) µs |
+| 256 | 5.71 (5.40 to 5.75) µs | 5.91 (5.90 to 5.92) µs |
 
-One heap reference costs about 3.7 µs here. **The 256-reference arm is
-withheld on this machine, and that is the guard working rather than a gap in
-the data.** Its figure is a difference between two timed blocks, and this
-machine deletes fast enough that the difference is no longer large compared
-with the error of the two arms it comes from, so `MeasureDelta()` flags it
-`SUBTRACTION_NOISE`. The slower machine resolves it and reads 10.3 µs against
-8.97 for a single reference, roughly 1.15x, with the widest spread of any row
-in the suite.
+One heap reference costs about 3.7 µs here and 256 of them about 5.8, so
+**a 256x change in reference count costs about 1.5x, not 256x.** Reference
+count is not what drives `del()`; live population is, as the next table shows.
+The desktop agrees on the direction and reads 1.2x on 516.1666 and 1.4x on
+516.1685, at spreads of 55 and 26 percent against 6 and 0 percent here, which
+is why the figures above come from the measuring machine.
 
-So the design guidance stands on the cross-check rather than on the primary
-machine: **going from 1 reference to 256 does not multiply the cost**, and
-nothing in either machine's data suggests reference count drives it. The
-zero-reference case is not measurable by either machine; its signal is a few
-percent of a tick against a 20 percent floor, so it is flagged
+**An earlier printing withheld the 256-reference row as `SUBTRACTION_NOISE`
+and rested the claim on the desktop instead.** That was true of the merge it
+was written from and is not true of the baselines in `results/` today, where
+the row clears its guard on both builds. It is restored rather than left
+withheld, on the standing rule that a withheld row measures nothing.
+
+The zero-reference case is not measurable by either machine; its signal is a
+few percent of a tick against a 20 percent floor, so it is flagged
 `LOW_RESOLUTION` and withheld.
 
 ### The scan runs only for references del cannot see
@@ -263,11 +267,11 @@ Median of three runs, with the observed range.
 
 | Live objs | 516.1666 | 516.1685 |
 |---|---|---|
-| 0 | 3.67 (3.62 to 3.71) µs | 4.04 (3.99 to 4.05) µs |
-| 50,000 | 85.9 (85.5 to 87.0) µs | 89.4 (89.3 to 89.8) µs |
-| 100,000 | 182 (167 to 186) µs | 199 (194 to 201) µs |
-| 200,000 | 604 (599 to 617) µs | 668 (663 to 673) µs |
-| 300,000 | 1,090 (1,088 to 1,106) µs | 1,160 (1,156 to 1,162) µs |
+| 0 | 3.71 (3.71 to 3.74) µs | 4.02 (3.94 to 4.03) µs |
+| 50,000 | 87.1 (86.2 to 87.1) µs | 89.4 (89.2 to 90.0) µs |
+| 100,000 | 190 (171 to 198) µs | 178 (173 to 189) µs |
+| 200,000 | 610 (600 to 620) µs | 670 (667 to 671) µs |
+| 300,000 | 1,104 (1,102 to 1,161) µs | 1,154 (1,151 to 1,158) µs |
 
 Growth is superlinear above 50,000 on both builds and on both machines, and
 `del.population_sweep_monotonic` asserts that ordering rather than leaving it
@@ -276,19 +280,20 @@ to a reader comparing five rows.
 **How superlinear is a property of the machine and the moment, not of the
 engine, and this is the sharpest example on the page.** Going from 50,000 to
 300,000 live objects, a 6x increase in population, costs **12.7x** the time
-here and **27x** on the Windows desktop, whose absolute figure at 300,000 is
-2,564 µs against this machine's 1,090.
+here and **53x** on the Windows desktop, whose absolute figure at 300,000 is
+3,856 µs against this machine's 1,104.
 
-**That desktop coefficient is not even stable across sittings.** The same three
-runs taken two days earlier, on the same clock and the same build, gave 40x and
-3,830 µs. Nothing changed but the hour. The scan is a memory walk, so its slope
-belongs to the cache hierarchy, the memory bandwidth and whatever else that
-machine was doing. **Carry the shape, which is that deletion cost climbs faster
-than population. Do not carry any coefficient on this page onto your own
-hardware, including the one measured here.**
+**That desktop coefficient is not stable across sittings, and there are now
+three of them on record.** The same measurement on the same machine, same
+build, same clock, has given 27x, 40x and 53x on three different evenings.
+Nothing changed but the hour. The scan is a memory walk, so its slope belongs
+to the cache hierarchy, the memory bandwidth and whatever else that machine was
+doing. **Carry the shape, which is that deletion cost climbs faster than
+population. Do not carry any coefficient on this page onto your own hardware,
+including the one measured here.**
 
-At 300,000 live objs and `tick_lag 0.5`, roughly 46 deletions consume the tick
-here and roughly 20 on the desktop. Both numbers say the same thing about
+At 300,000 live objs and `tick_lag 0.5`, roughly 45 deletions consume the tick
+here and roughly 13 on the desktop. Both numbers say the same thing about
 design.
 
 ### Turfs are not counted
@@ -297,8 +302,8 @@ Map resized with no objects present, one heap ref on the victim:
 
 | Turfs | 516.1666 | 516.1685 |
 |---|---|---|
-| 10,000 | 3.66 µs | 4.01 µs |
-| 48,400 | 3.63 µs | 4.01 µs |
+| 10,000 | 3.68 µs | 4.00 µs |
+| 48,400 | 3.72 µs | 4.02 µs |
 
 Flat, and at 1 to 2% spread this is now a tight result rather than a plausible
 one. Turfs do not feed the scan.
@@ -310,8 +315,8 @@ live count held at zero:
 
 | | 516.1666 | 516.1685 |
 |---|---|---|
-| before the churn | 3.68 µs | 3.99 µs |
-| after 500k allocated and freed | 3.65 µs | 3.98 µs |
+| before the churn | 3.75 µs | 4.04 µs |
+| after 500k allocated and freed | 3.69 µs | 3.99 µs |
 
 Flat. How many objects a server has created over its lifetime is irrelevant;
 only concurrent population counts.
@@ -320,22 +325,24 @@ only concurrent population counts.
 
 | State | 516.1666 | 516.1685 |
 |---|---|---|
-| cold start, 0 live | 3.67 µs | 4.04 µs |
-| grown to 300,000 | 1,090 µs | 1,160 µs |
-| all 300,000 freed | **197.5 (197.3 to 199.7) µs** | **198.8 µs** |
+| cold start, 0 live | 3.71 µs | 4.02 µs |
+| grown to 300,000 | 1,104 µs | 1,154 µs |
+| all 300,000 freed | **200.7 (200.3 to 200.9) µs** | **198.7 µs** |
 
 Freeing the population does not restore the cold cost. Whatever structure the
 scan walks grows with peak concurrent live count and never shrinks. **A
 one-off population spike raises `del()` cost about 54x here for the remaining
-life of the process, and about 16x on the desktop.** The two machines differ on
+life of the process, and about 24x on the desktop.** The two machines differ on
 the multiple for the same reason they differ on everything else in this
-section: their cold costs are 3.7 µs and 9.8 µs, so the same residual structure
-prices differently against each.
+section: their cold costs are 3.7 µs and 9.6 µs, so the same residual structure
+prices differently against each. Note that the residual itself is the one row
+in this section that barely moves between machines, 201 µs here against 231 on
+the desktop, while the scan that produces it is 3.5x apart.
 
 ### Alternative
 
 ```dm
-del(thing)          // ~1,090 µs at 300k live objs here, ~2,560 on the desktop
+del(thing)          // ~1,104 µs at 300k live objs here, ~3,856 on the desktop
 thing = null        // no scan, no population sensitivity
 ```
 
@@ -346,8 +353,8 @@ printed. It is now published as `del.drop_control_1ref`:
 
 | | 516.1666 | 516.1685 |
 |---|---|---|
-| allocate, build 1 heap ref, drop both, **no** `del()` | 1.04 µs | 1.03 µs |
-| the same with `del()`, net of that control | 3.68 µs | 3.97 µs |
+| allocate, build 1 heap ref, drop both, **no** `del()` | 1.04 µs | 1.04 µs |
+| the same with `del()`, net of that control | 3.68 µs | 4.00 µs |
 
 Note what the control includes, because the name matters: allocation is
 unavoidable, since there is nothing to drop without first making it. So this is
@@ -356,15 +363,16 @@ control arm, and quoting it as anything else would repeat the mistake being
 corrected.
 
 With both halves measured, the comparison can finally be stated honestly.
-Against that 1.04 µs control, `del()` costs about **4.5x** at zero population
-and, at 300,000 live objects where it reads 1,083 µs, about **1,040x**. Earlier
+Against that 1.04 µs control, `del()` costs about **3.5x** at zero population
+and, at 300,000 live objects where it reads 1,104 µs, about **1,060x**. Earlier
 versions of this page said "up to 3,300x" and then "about 3,000x" against a
 denominator that had never been measured here at all.
 
-What is measured is the numerator: **deletion at 300,000
-live objects costs about 3,800 µs and dropping the last reference does not
-scale with population at all.** The design advice is unchanged and now rests
-only on figures this repository can reproduce.
+What is measured is the numerator: **deletion at 300,000 live objects costs
+about 1,100 µs on the measuring machine and about 3,900 on the desktop, and
+dropping the last reference does not scale with population at all**, holding at
+1.04 µs in both builds. The design advice is unchanged and now rests only on
+figures this repository can reproduce.
 
 ### Not a defect: confirmed across the GC fixes
 
@@ -374,20 +382,24 @@ section in doubt. Tested directly, three runs on each build:
 
 | id | 516.1666 | 516.1685 |
 |---|---|---|
-| `del.live_0` | 3.67 (3.62 to 3.71) | 4.04 (3.99 to 4.05) |
-| `del.live_200000` | 604 (599 to 617) | 668 (663 to 673) |
-| `del.live_300000` | 1,090 (1,088 to 1,106) | 1,160 (1,156 to 1,162) |
-| `del.residual_after_peak` | 197.5 | 198.8 |
+| `del.live_0` | 3.71 (3.71 to 3.74) | 4.02 (3.94 to 4.03) |
+| `del.live_200000` | 610 (600 to 620) | 670 (667 to 671) |
+| `del.live_300000` | 1,104 (1,102 to 1,161) | 1,154 (1,151 to 1,158) |
+| `del.residual_after_peak` | 200.7 | 198.7 |
 
-The two builds separate by 6 to 10% on three of these four rows, with 1685 the
-dearer and the observed ranges not overlapping, which the earlier and noisier
-data could not have shown. **It is recorded as an observation and not promoted
-to a claim**, for three reasons: it is one machine, the same rows overlapped
-completely on the desktop, and this project's own rule is that a cross-build
-comparison must interleave its runs within one sitting, which the run order
-behind these triples does not record. A separation this size is exactly what
-non-interleaved sittings have faked here before. The residual row, which does
-not separate, is the useful control sitting right next to it. The superlinear growth and the
+The two builds separate by 4 to 10% on three of these four rows, with 1685 the
+dearer. **It is recorded as an observation and not promoted to a claim**, for
+four reasons now: it is one machine, the same rows overlapped completely on the
+desktop, this project's own rule is that a cross-build comparison must
+interleave its runs within one sitting and the run order behind these triples
+does not record it, and **the 300,000 ranges do overlap** (1,102 to 1,161
+against 1,151 to 1,158), so only the two smaller rows separate cleanly at all.
+An earlier printing of this table said the ranges did not overlap; that was
+true of the merge it was written from and is not true of the baselines in
+`results/` today. A separation this size is exactly what non-interleaved
+sittings have faked here before. The residual row, which does not separate and
+in fact runs marginally cheaper on 1685, is the useful control sitting right
+next to it. The superlinear growth and the
 permanent residual are engine characteristics, not defects. Earlier printings
 of this table gave three raw values per cell from a 2026-07-30 pair of
 triples; medians with ranges say the same thing and are comparable with the
@@ -1085,7 +1097,7 @@ builds, and each names the section it comes from.
 | Associative list instead of `in` at 5,000 entries | 50x here, 74x on the desktop | §3 |
 | `+=` instead of `.Add()` for list building | 1.5x | §4 |
 | `world.log` instead of a direct file write | 4.4x here, 45.9x on Windows; platform-conditional, and only when stdout is not a file | §11b |
-| Dropping the last reference instead of `del()` at 300k live objects | `del()` alone costs 1,090 µs here and 2,560 on the desktop; the ratio is not quoted, see §2 | §2 |
+| Dropping the last reference instead of `del()` at 300k live objects | `del()` alone costs 1,104 µs here and 3,856 on the desktop, against a 1.04 µs control that does not scale with population | §2 |
 
 Two rules were dropped from this table on 2026-08-01 rather than restated:
 "push from the event instead of polling", whose 9.2 to 9.6x comes from the

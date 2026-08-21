@@ -320,13 +320,20 @@ binding) is recorded alongside its qualification numbers, and its results
 get their own column with their own error bars, per the federation rules
 below.
 
-**The first cross-OS assertion matrix now exists, and it is clean.** All 52
+**The first cross-OS assertion matrix now exists, and it is clean.** All 59
 assertions carry the same verdict on Windows and Linux, on both 516.1666 and
 516.1685, compared by id and verdict rather than by counting passes. That was
 an open question with no data behind it until 2026-08-03. It is the weaker of
 the two possible answers, since a disagreement would have been a finding about
 the engine, but it is the one that makes the assertion half of this suite
 portable in fact rather than in principle.
+
+**It also does work the build matrix could not do alone.** One assertion
+differs between builds, `lists.find_costs_about_the_same_as_in`, and it flips
+in the same direction on both operating systems. A verdict that moved on one OS
+and not the other would have been a platform property; one that moves on both
+is the engine. The clean cross-OS column is what licenses calling the `Find()`
+regression an engine change rather than a Windows one.
 
 Cost is a different story in one place. Engine compute measures the same on
 both machines; the io layer does not, and a direct file write is roughly 20x
