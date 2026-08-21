@@ -56,6 +56,14 @@ foreach ($dd in $docDirs) {
 # them, which was the original point.
 $publicDocs  = @('README.md', 'CONTRIBUTING.md', 'BYOND-PERF-SPEC.md', 'METHOD.md')
 $privateDocs = @('NOTES.md', 'VERIFICATION.md', 'INSTRUMENTS.md')
+# Held separately and by name, because $publicDocs is REASSIGNED further down to
+# a list of FileInfo objects for the git check. The checks that distinguish the
+# published record from the audit trail run before that point and would keep
+# working, right up until someone reorders two blocks, at which point
+# "-contains $d.Name" would match nothing and both checks would silently verify
+# zero documents while still printing ok. That is this project's oldest failure
+# shape and it does not get to live in the checker itself.
+$publishedDocNames = $publicDocs.Clone()
 $missingDocs = @($publicDocs | Where-Object { $docs.Name -notcontains $_ })
 if ($missingDocs.Count -gt 0) { Bad "published document(s) not found on the doc path: $($missingDocs -join ', ')" }
 else { Good "$($docs.Count) documents discovered, all $($publicDocs.Count) published ones present" }
@@ -70,11 +78,52 @@ if ($absentNotes.Count -eq $privateDocs.Count) {
 # ---------------------------------------------------------------- 1. row counts
 # Caught nothing for weeks, then caught "15 measurements" where the file said 13.
 $baselines = @{}
+# Row-level facts, for the checks after this one. $rowFlags records whether each
+# MEASURE row cleared its guards in each baseline, which is what decides whether
+# the published record is allowed to call it withheld.
+$rowIds   = New-Object System.Collections.Generic.HashSet[string]
+$families = New-Object System.Collections.Generic.HashSet[string]
+$rowFlags = @{}
 foreach ($f in Get-ChildItem (Join-Path $Root "results") -Filter *.tsv -File -ErrorAction SilentlyContinue) {
     $lines = Get-Content $f.FullName
     $baselines[$f.Name] = [pscustomobject]@{
         Assert  = @($lines | Where-Object { $_ -like "ASSERT`t*" }).Count
         Measure = @($lines | Where-Object { $_ -like "MEASURE`t*" }).Count
+    }
+}
+
+# Which baselines the published record is answerable to. results/ keeps
+# superseded files on purpose (-run1..3, -v2, -v3, the pre-merge singles), and
+# counting those made the row checks below useless in both directions: a
+# renamed row still resolved because an old file still carried it, and one
+# stale file flagging a row was enough to make its flag state look
+# machine-dependent and skip the check. So: one baseline per suite, build and
+# system, and where several exist the one with the most measured rows wins,
+# which is always the newest since rows are added and not removed. Deterministic
+# and self-maintaining, so a new baseline needs no edit here.
+$canonical = @{}
+foreach ($f in Get-ChildItem (Join-Path $Root "results") -Filter *.tsv -File -ErrorAction SilentlyContinue) {
+    $lines = Get-Content $f.FullName
+    $meta = @{}
+    foreach ($line in $lines) { if ($line -match '^#\s*(\S+)\s+(.*)$') { $meta[$Matches[1]] = $Matches[2].Trim() } }
+    $key = "$($meta['suite'])|$($meta['byond_build'])|$($meta['system'])"
+    $n = $baselines[$f.Name].Measure
+    if (-not $canonical.ContainsKey($key) -or $n -gt $canonical[$key].N) {
+        $canonical[$key] = [pscustomobject]@{ Name = $f.Name; N = $n; Lines = $lines }
+    }
+}
+foreach ($c in $canonical.Values) {
+    foreach ($line in $c.Lines) {
+        if (-not ($line -like "ASSERT`t*" -or $line -like "MEASURE`t*")) { continue }
+        $p = $line -split "`t"
+        if ($p.Count -lt 8) { continue }
+        $id = $p[1]
+        [void]$rowIds.Add($id)
+        [void]$families.Add(($id -split '\.')[0])
+        if ($p[0] -eq 'MEASURE') {
+            if (-not $rowFlags.ContainsKey($id)) { $rowFlags[$id] = New-Object System.Collections.Generic.List[bool] }
+            $rowFlags[$id].Add([bool]($p.Count -ge 10 -and $p[9] -match 'LOW_RESOLUTION|SUBTRACTION_NOISE'))
+        }
     }
 }
 if ($baselines.Count -eq 0) { Bad "no baselines under results/, cannot verify any claimed count" }
@@ -88,22 +137,63 @@ if ($baselines.Count -eq 0) { Bad "no baselines under results/, cannot verify an
 # collapsed text so a wrapped claim still counts, cap the gap so a claim cannot
 # pair with a filename from another paragraph, and skip a gap containing a
 # second .dme, which would validate one suite's counts against another's name.
-$claimRe = '(?<suite>suite\w*)\.dme`?(?<between>[^`]{0,120}?)(?<a>\d+) assertions?, (?<m>\d+) measurements?'
+#
+# Three phrasings, because matching only one is how this check spent its whole
+# life validating README.md and never once looking at BYOND-PERF-SPEC.md, which
+# writes the counts before the filename and joins them with "and". That page
+# carried "52 assertions and 92 measurements" against a real 59 and 118 while
+# this script printed "docs consistent" (VERIFICATION 40).
+$claimPatterns = @(
+    '(?<suite>suite\w*)\.dme`?(?<between>[^`]{0,120}?)(?<a>\d+) assertions?, (?<m>\d+) measurements?'
+    '(?<a>\d+) assertions? and (?<m>\d+) measurements? for `?(?<suite>suite\w*)\.dme'
+    '(?<a>\d+) and (?<m>\d+) for `?(?<suite>suite\w*)\.dme'
+)
 $claims = 0
 foreach ($d in $docs) {
     $flat = ((Get-Content $d.FullName -Raw) -replace '\s+', ' ')
-    foreach ($mm in [regex]::Matches($flat, $claimRe)) {
-        if ($mm.Groups['between'].Value -match '\.dme') { continue }
-        $a = [int]$mm.Groups['a'].Value
-        $m = [int]$mm.Groups['m'].Value
-        $suite = $mm.Groups['suite'].Value
-        $claims++
-        $hit = $baselines.GetEnumerator() | Where-Object { $_.Value.Assert -eq $a -and $_.Value.Measure -eq $m }
-        if ($hit) {
-            Good "$($d.Name): $suite.dme $a/$m matches $($hit[0].Key)"
-        } else {
-            $seen = ($baselines.GetEnumerator() | ForEach-Object { "$($_.Key)=$($_.Value.Assert)/$($_.Value.Measure)" }) -join ", "
-            Bad "$($d.Name): claims $suite.dme $a assertions, $m measurements. No baseline matches. Have: $seen"
+    # Where a full claim was parsed, so the coverage check below can tell a
+    # verified number from one nobody looked at.
+    $covered = New-Object System.Collections.Generic.List[object]
+    foreach ($pat in $claimPatterns) {
+        foreach ($mm in [regex]::Matches($flat, $pat)) {
+            if ($mm.Groups['between'].Success -and $mm.Groups['between'].Value -match '\.dme') { continue }
+            $a = [int]$mm.Groups['a'].Value
+            $m = [int]$mm.Groups['m'].Value
+            $suite = $mm.Groups['suite'].Value
+            $claims++
+            $covered.Add(@($mm.Index, $mm.Index + $mm.Length))
+            $hit = $baselines.GetEnumerator() | Where-Object { $_.Value.Assert -eq $a -and $_.Value.Measure -eq $m }
+            if ($hit) {
+                Good "$($d.Name): $suite.dme $a/$m matches $($hit[0].Key)"
+            } else {
+                $seen = ($baselines.GetEnumerator() | ForEach-Object { "$($_.Key)=$($_.Value.Assert)/$($_.Value.Measure)" }) -join ", "
+                Bad "$($d.Name): claims $suite.dme $a assertions, $m measurements. No baseline matches. Have: $seen"
+            }
+        }
+    }
+
+    # Coverage. A count that no pattern above consumed is a number nobody
+    # checked, and silence there is indistinguishable from a pass, which is the
+    # exact failure this whole check keeps repeating. So a bare count must match
+    # some baseline on its own.
+    #
+    # Public documents only. The operating notes record superseded counts on
+    # purpose, as the audit trail of what the suite emitted at the time, and
+    # rewriting those to satisfy a checker would destroy the record.
+    if ($publishedDocNames -contains $d.Name) {
+        foreach ($bare in [regex]::Matches($flat, '(?<n>\d+) (?<kind>assertions?|measurements?)')) {
+            $inside = $false
+            foreach ($c in $covered) { if ($bare.Index -ge $c[0] -and $bare.Index -lt $c[1]) { $inside = $true; break } }
+            if ($inside) { continue }
+            $n = [int]$bare.Groups['n'].Value
+            $isAssert = $bare.Groups['kind'].Value -like 'assertion*'
+            $ok = $baselines.GetEnumerator() | Where-Object { if ($isAssert) { $_.Value.Assert -eq $n } else { $_.Value.Measure -eq $n } }
+            if ($ok) {
+                $claims++
+                Good "$($d.Name): $n $($bare.Groups['kind'].Value) matches $($ok[0].Key)"
+            } else {
+                Bad "$($d.Name): says ``$n $($bare.Groups['kind'].Value)`` and no baseline has that count. Either the figure is stale or the phrasing needs adding to the claim patterns."
+            }
         }
     }
 }
@@ -111,6 +201,60 @@ foreach ($d in $docs) {
 # this check's own failure mode.
 if ($claims -eq 0) { Bad "no count claim matched anywhere in the documents; the claim pattern has gone stale" }
 else { Good "$claims count claim(s) checked against the baselines" }
+
+# ------------------------------------------------ 1b. row ids and withheld rows
+# BYOND-PERF-SPEC.md withheld `del.refs_256` as SUBTRACTION_NOISE and rested a
+# published claim on the other machine instead. The row was unflagged in every
+# tracked baseline: the withholding had been true of the merge the section was
+# written from, and stayed in the prose after the data moved. Nothing could see
+# it, because no check ever compared a document against a row (VERIFICATION 40).
+#
+# Families come from the baselines themselves, so `world.tick_usage` and
+# `client.byond_build` are not mistaken for row ids, and a new family needs no
+# edit here.
+#
+# Published documents only, for the same reason the count coverage above is:
+# the operating notes name rows that were renamed or deleted, on purpose, as
+# the record of what happened at the time. VERIFICATION 27 says so in as many
+# words about `io.world_log_far_cheaper_than_file`. Holding the audit trail to
+# the current baselines would force it to be rewritten, which is the one thing
+# an audit trail must never be.
+$idsChecked = 0; $idProblems = 0
+foreach ($d in $docs) {
+    if ($publishedDocNames -notcontains $d.Name) { continue }
+    $raw = Get-Content $d.FullName -Raw
+    $flat = ($raw -replace '\s+', ' ')
+    foreach ($mm in [regex]::Matches($flat, '`(?<id>[a-z][a-z0-9_]*\.[a-z0-9_]+)`')) {
+        $id = $mm.Groups['id'].Value
+        if (-not $families.Contains(($id -split '\.')[0])) { continue }
+        # `framework.dm` is a file, and `framework` is also a row family, so a
+        # filename matches the id shape exactly. Extensions are never row ids.
+        if ($id -match '\.(dm|dme|ps1|sh|md|tsv|py|html|txt|zip|log|yml)$') { continue }
+        $idsChecked++
+
+        if (-not $rowIds.Contains($id)) {
+            Bad "$($d.Name): names row ``$id``, which is in none of the $($canonical.Count) current baselines. A renamed or deleted row leaves the prose describing something that no longer runs."
+            $idProblems++
+            continue
+        }
+        if (-not $rowFlags.ContainsKey($id)) { continue }
+
+        $flags = $rowFlags[$id]
+        $start = [math]::Max(0, $mm.Index - 220)
+        $window = $flat.Substring($start, [math]::Min(440, $flat.Length - $start))
+        $saysWithheld = $window -match 'withheld|withhold'
+
+        if ($saysWithheld -and ($flags -notcontains $true)) {
+            Bad "$($d.Name): calls ``$id`` withheld, but it clears its guards in all $($flags.Count) baseline(s) that carry it. A row is withheld when its own data says so; publish it or say why not."
+            $idProblems++
+        } elseif (-not $saysWithheld -and ($flags -notcontains $false) -and $window -match '\d\s*(?:us|µs)') {
+            Bad "$($d.Name): quotes a figure beside ``$id``, which is flagged in every baseline that carries it. A flagged row is not evidence."
+            $idProblems++
+        }
+    }
+}
+if ($idsChecked -eq 0) { Bad "no row id was checked against a baseline; the id pattern has gone stale" }
+elseif ($idProblems -eq 0) { Good "$idsChecked row id mention(s) agree with the $($canonical.Count) current baselines" }
 
 # ------------------------------------------------------- 2. VERIFICATION refs
 # A renumber of VERIFICATION.md silently invalidated citations in a sibling
