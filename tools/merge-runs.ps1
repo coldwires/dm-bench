@@ -96,7 +96,13 @@ $conditions = @{}
 # source_commit: twelve Linux runs were binned on 2026-08-02 for having been
 # built from a checkout two commits behind, and every one of them reported 52
 # assertions and 0 failed. Runs from different source cannot be one baseline.
-foreach ($key in @('clock', 'stdout_binding', 'source_commit')) {
+#
+# defines: a -D<name> compile is different source by another route, and the
+# obvious case is BREAKCHECK, which deliberately reintroduces the defects the
+# sweep assertions exist to catch. A run compiled with it must never reach a
+# baseline. Ordinary runs carry no stamp at all, so the mixed-stamping refusal
+# below is what separates the two.
+foreach ($key in @('clock', 'stdout_binding', 'source_commit', 'defines')) {
     $vals = @($parsed | ForEach-Object { $_.Meta[$key] } | Where-Object { $_ } | Sort-Object -Unique)
     $stamped = @($parsed | Where-Object { $_.Meta[$key] }).Count
     if ($vals.Count -gt 1) { throw "runs disagree on ${key}: $($vals -join ', ')" }
@@ -161,7 +167,7 @@ $lines.Add("# byond_version`t$($parsed[0].Meta['byond_version'])")
 $lines.Add("# byond_build`t$($parsed[0].Meta['byond_build'])")
 $lines.Add("# system`t$system")
 $lines.Add("# runner_priority`t$($prios[0])")
-foreach ($key in @('clock', 'stdout_binding', 'source_commit')) {
+foreach ($key in @('clock', 'stdout_binding', 'source_commit', 'defines')) {
     if ($conditions.ContainsKey($key)) { $lines.Add("# $key`t$($conditions[$key])") }
 }
 if ($stamped.Count -eq $parsed.Count -and $parsed.Count -gt 0) {

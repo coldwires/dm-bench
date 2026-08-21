@@ -12,6 +12,7 @@
 #   tools/run.sh --suite suite --version 516.1666
 #   tools/run.sh --suite suite_del --version all --port 47950
 #   tools/run.sh --suite suite --version 516.1666 --priority high
+#   tools/run.sh --suite suite_del --version 516.1666 --define BREAKCHECK
 #
 # Standalones are looked for in, first hit wins:
 #   $DMBENCH_BYOND, <repo>/byond-standalones, ~/byond-standalones
@@ -25,6 +26,13 @@ PRIORITY=normal
 TIMEOUT=900
 STDOUT_BINDING=file
 LIST=0
+# Repeatable --define, passed to DreamMaker as -D<name>. A define changes what
+# was compiled, so it is a measurement condition: it is stamped into the result
+# and merge-runs.ps1 refuses to blend runs that disagree on it, or a set where
+# only some runs carry the stamp. That is what stops a BREAKCHECK run, which
+# deliberately reintroduces the defects the sweep assertions catch, from
+# reaching a baseline.
+DEFINES=""
 
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -35,10 +43,20 @@ while [ $# -gt 0 ]; do
         --priority) PRIORITY="$2"; shift ;;
         --timeout)  TIMEOUT="$2"; shift ;;
         --stdout)   STDOUT_BINDING="$2"; shift ;;
+        --define)   DEFINES="${DEFINES:+$DEFINES,}$2"; shift ;;
         *) echo "unknown option: $1" >&2; exit 2 ;;
     esac
     shift
 done
+
+# Word splitting is what turns the comma list into separate -D arguments, so
+# this one expansion is deliberately unquoted below.
+DEFINE_ARGS=""
+if [ -n "$DEFINES" ]; then
+    for d in $(echo "$DEFINES" | tr ',' ' '); do
+        DEFINE_ARGS="$DEFINE_ARGS -D$d"
+    done
+fi
 
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 RESULTS="$ROOT/results"
@@ -159,7 +177,9 @@ for label in $targets; do
     wd="$ROOT/build/$label"
     mkdir -p "$wd"
 
-    compile=$("$bin/DreamMaker" "$DME" 2>&1)
+    [ -n "$DEFINE_ARGS" ] && echo "  defines:$DEFINE_ARGS"
+    # shellcheck disable=SC2086
+    compile=$("$bin/DreamMaker" $DEFINE_ARGS "$DME" 2>&1)
     echo "  compile: $(echo "$compile" | grep -E 'errors?,' | tail -1)"
     if echo "$compile" | grep -qE '\b[1-9][0-9]* error'; then
         echo "  compile failed on $label" >&2
@@ -270,6 +290,9 @@ for label in $targets; do
         # See run.ps1 for why: this is what lets a merge refuse a triple
         # stitched across hours, which no other stamp can detect.
         printf '# run_started\t%s\n' "$RUN_STARTED"
+        # Stamped only when non-empty, so an ordinary run carries no key and a
+        # defined run cannot be merged with one.
+        [ -n "$DEFINES" ] && printf '# defines\t%s\n' "$DEFINES"
     } >> "$produced"
 
     cp "$produced" "$RESULTS/$(basename "$produced")"

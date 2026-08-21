@@ -27,6 +27,16 @@ param(
     # spread of rows over 10 us (18.3% to 9.9%). Pass Normal to override.
     [ValidateSet('Normal', 'AboveNormal', 'High')]
     [string]$Priority = 'High',
+    # Preprocessor defines passed to dm.exe as -D<name>, verified end to end on
+    # 2026-08-03 (VERIFICATION 37). This replaces the copy-a-manifest BREAKCHECK
+    # procedure in VERIFICATION 17 and the BOM trap that came with it.
+    #
+    # A define changes what was compiled, so it is a measurement condition and
+    # is stamped into the result rather than remembered by whoever ran it.
+    # merge-runs.ps1 refuses to blend runs that disagree on it, and refuses a
+    # set where only some runs carry the stamp, so a BREAKCHECK run cannot be
+    # merged into a baseline by accident.
+    [string[]]$Define = @(),
     [switch]$List
 )
 
@@ -115,7 +125,12 @@ foreach ($b in $targets) {
     $wd = Join-Path $Root "build\$($b.Label)"
     New-Item -ItemType Directory -Path $wd -Force | Out-Null
 
-    $compile = & $b.Dm $dme 2>&1 | Out-String
+    # -D<name> before the manifest. dm.exe accepts them in that order; the
+    # define reaches the preprocessor, confirmed by suite_del.dmb growing from
+    # 31,319 to 31,353 bytes with -DBREAKCHECK.
+    $dmArgs = @($Define | ForEach-Object { "-D$_" }) + @($dme)
+    if ($Define.Count) { "  defines: $($Define -join ', ')" }
+    $compile = & $b.Dm @dmArgs 2>&1 | Out-String
     $summary = ($compile -split "`n" | Where-Object { $_ -match 'errors,' }) -join ''
     "  compile: $($summary.Trim())"
     if ($compile -match '\b([1-9]\d*) error') { Write-Error "compile failed on $($b.Label)"; continue }
@@ -178,7 +193,11 @@ foreach ($b in $targets) {
         # refusal could see it. File timestamps cannot serve: copying a result
         # off another machine rewrites them.
         $started = $started.ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')
-        [System.IO.File]::AppendAllText($f.FullName, "# runner_priority`t$Priority`r`n# source_commit`t$SourceCommit`r`n# run_started`t$started`r`n", (New-Object System.Text.UTF8Encoding($false)))
+        # Stamped only when non-empty, so an ordinary run carries no key and a
+        # defined run cannot be merged with one: merge-runs.ps1 refuses a set
+        # that is stamped in some runs and not others.
+        $defineStamp = if ($Define.Count) { "# defines`t$($Define -join ',')`r`n" } else { "" }
+        [System.IO.File]::AppendAllText($f.FullName, "# runner_priority`t$Priority`r`n# source_commit`t$SourceCommit`r`n# run_started`t$started`r`n$defineStamp", (New-Object System.Text.UTF8Encoding($false)))
         Copy-Item $f.FullName (Join-Path $ResultsDir $f.Name) -Force
         $res = (Select-String -Path $f.FullName -Pattern '^# (passed|failed|measured|low_resolution|result)\s+(\S+)') |
                ForEach-Object { "{0}={1}" -f $_.Matches.Groups[1].Value, $_.Matches.Groups[2].Value }
