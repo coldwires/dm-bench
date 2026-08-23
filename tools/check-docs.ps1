@@ -55,7 +55,7 @@ foreach ($dd in $docDirs) {
 # exist locally: a working tree that has them must not quietly stop checking
 # them, which was the original point.
 $publicDocs  = @('README.md', 'CONTRIBUTING.md', 'BYOND-PERF-SPEC.md', 'METHOD.md')
-$privateDocs = @('NOTES.md', 'VERIFICATION.md', 'INSTRUMENTS.md')
+$privateDocs = @('VERIFICATION.md', 'INSTRUMENTS.md')
 # Held separately and by name, because $publicDocs is REASSIGNED further down to
 # a list of FileInfo objects for the git check. The checks that distinguish the
 # published record from the audit trail run before that point and would keep
@@ -362,7 +362,7 @@ $external = New-Object System.Collections.Generic.HashSet[string]
 # on 2026-08-01 (VERIFICATION 13) and still appeared in the ledger the next day,
 # purely because that entry describes them. A ledger that counts its own history
 # overstates the debt, which is the same failure as understating it.
-$operatingNotes = @('VERIFICATION.md', 'INSTRUMENTS.md', 'NOTES.md')
+$operatingNotes = @('VERIFICATION.md', 'INSTRUMENTS.md')
 
 foreach ($d in $docs) {
     $text = Get-Content $d.FullName -Raw
@@ -486,7 +486,7 @@ if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
 # The framework has guards; they only apply if the code routes through them.
 # Value() performs NO resolution check, so a timing sent through it bypasses
 # MIN_DS, BASELINE_HEAVY and BELOW_BASELINE and the row looks identical in the
-# output. That rule was written into NOTES.md on 2026-07-30 after the del suite
+# output. That rule was written down on 2026-07-30 after the del suite
 # was fixed, and perf_calls_deep.dm violated it in 13 places for a further day,
 # because nothing checked. This is that check.
 $timeUnits = @('us', 'ms', 'ds', 's', 's-total', 'x')
