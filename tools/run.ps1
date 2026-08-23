@@ -68,11 +68,27 @@ try {
 function Get-Builds {
     if (-not (Test-Path $Standalone)) { throw "no byond-standalones directory at $Standalone" }
     $found = @()
+    $skipped = @()
     foreach ($d in Get-ChildItem $Standalone -Directory | Sort-Object Name) {
         $dm = Join-Path $d.FullName "bin\dm.exe"
+        # dd.exe is the console server and is a NEWER addition: 508.1287 and
+        # 513.1490 ship dreamdaemon.exe only, and they are different binaries,
+        # 38 KB against 268 KB with different hashes. Requiring dd.exe made
+        # every build before roughly 514 invisible, and the loop skipped them
+        # with `continue`, so `-List` simply did not mention them. That is the
+        # failure shape this project keeps rediscovering: a check that answers
+        # confidently whether or not the thing exists.
+        #
+        # Fall back to dreamdaemon.exe, and report which server was chosen so
+        # the difference is visible rather than assumed.
         $dd = Join-Path $d.FullName "bin\dd.exe"
-        if (-not (Test-Path $dm)) { continue }
-        if (-not (Test-Path $dd)) { continue }
+        $server = 'dd.exe'
+        if (-not (Test-Path $dd)) {
+            $dd = Join-Path $d.FullName "bin\dreamdaemon.exe"
+            $server = 'dreamdaemon.exe'
+        }
+        if (-not (Test-Path $dm)) { $skipped += "$($d.Name) (no bin\dm.exe)"; continue }
+        if (-not (Test-Path $dd)) { $skipped += "$($d.Name) (no server binary)"; continue }
 
         # ProductVersion looks like "5.0.516.1666 (5.0 Public)". Take the 516.1666.
         $raw = (Get-Item $dm).VersionInfo.ProductVersion
@@ -84,8 +100,15 @@ function Get-Builds {
             Reported = $reported
             Dm       = $dm
             Dd       = $dd
+            Server   = $server
             Match    = ($reported -eq $d.Name)
         }
+    }
+    # A directory that could not be used is said out loud. Silence here is
+    # indistinguishable from the directory not existing.
+    if ($skipped.Count -gt 0) {
+        Write-Host "skip  $($skipped.Count) directory(ies) under byond-standalones are not usable builds:"
+        foreach ($s in $skipped) { Write-Host "skip    $s" }
     }
     return $found
 }
@@ -96,7 +119,7 @@ if ($builds.Count -eq 0) { throw "no usable builds under $Standalone (need <labe
 if ($List) {
     "Discovered builds:"
     $builds | ForEach-Object {
-        "{0,-12} binaries report {1,-12} {2}" -f $_.Label, $_.Reported, $(if ($_.Match) { "ok" } else { "MISLABELLED" })
+        "{0,-12} binaries report {1,-12} {2,-16} {3}" -f $_.Label, $_.Reported, $_.Server, $(if ($_.Match) { "ok" } else { "MISLABELLED" })
     }
     return
 }
