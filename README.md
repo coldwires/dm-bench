@@ -171,10 +171,9 @@ LICENSE                    MIT, harness and documents only, not BYOND itself
 
 Everything under `suite/` is the thing being published: DM source and nothing
 else. Everything under `tools/` runs it. `results/` is the data those tools
-produced, and `site/` renders that data into a page. Three directories the
+produced, and `site/` renders that data into a page. Two directories the
 repository does not carry are created locally by use: `byond-standalones/`
-holds one full BYOND per build, `build/` is per-run scratch, and a private
-`working/` holds the maintainers' operating notes.
+holds one full BYOND per build and `build/` is per-run scratch.
 
 `extras/load.dme` and `extras/respawn.dme` are earlier harnesses, not yet
 ported to the framework. `extras/noeffect.dme` is a standalone demonstration
